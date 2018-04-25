@@ -17,7 +17,7 @@ Run scitools dependencies to check software and R requirements.
 The default executables can be altered at the start of the scitools
 code in the # GLOBAL DEFAULTS section.
 
-Executables:
+###Executables:
    gzip         For gzipped fastq files. Default: gzip & zcat
                 (these are hardoded at the beginning of the scitools
                  code and not available as options)
@@ -28,7 +28,7 @@ Executables:
    macs2        For atac-callpeak only. Default: macs2
    scitools     Can call itself. Default: scitools
 
-R packages:
+###R packages:
    ggplot2         For plotting commands
    svd             For Latent Semantic Indexing (LSI)
    Rtsne           For tSNE visualization
