@@ -1,5 +1,5 @@
 scitools Version: 0.1.1
-Adey Lab (www.adeylab.org)
+Adey Lab (www.adeylab.org, www.github.com/adeylab/scitools)
 
 scitools is a set of scripts designed for working with single-cell
 combinatorial indexing data. It includes tools to go from fastq files
@@ -17,8 +17,8 @@ Run scitools dependencies to check software and R requirements.
 The default executables can be altered at the start of the scitools
 code in the # GLOBAL DEFAULTS section.
 
-###Executables:
-   gzip         For gzipped fastq files. Default: gzip & zcat
+Executables:
+   gzip         For gzipped fastq files. Default: gzip & zcat
                 (these are hardoded at the beginning of the scitools
                  code and not available as options)
    samtools     Bam-related commands. Default: samtools
@@ -28,8 +28,8 @@ code in the # GLOBAL DEFAULTS section.
    macs2        For atac-callpeak only. Default: macs2
    scitools     Can call itself. Default: scitools
 
-###R packages:
-   ggplot2         For plotting commands
+R packages:
+   ggplot2         For plotting commands
    svd             For Latent Semantic Indexing (LSI)
    Rtsne           For tSNE visualization
    methods         For PCA
