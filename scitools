@@ -1,52 +1,31 @@
 #!/usr/bin/perl
 
-# START GLOBAL DEFAULTS
-#   To tailor the defaults to your own specified locations
-#   to avoid having to specify them as options for each run, change the
-#   variables below. A setup script may be included in future versions to
-#   perform this for you via a series of prompts.
-
-# Location Defaults
-$fastq_input_directory = "fastq_input_directory"; #DEFAULT=fastq_input_directory
-$SCI_fastq_directory = "SCI_fastq_directory"; #DEFAULT=SCI_fastq_directory
-$SCI_index_file = "SCI_index_file"; #DEFAULT=SCI_index_file
-
-# Reference genome shortcuts
-# Note: scitools looks for the following files:
-#  [ref.fa].[bwa_index]
-#  [ref.fa].fai
-#  [ref].refGene.txt (for plot-reads)
-# To enable "hg38", "hg19", and "mm10" shorcut usage, ensure all files are present
-$hg19_ref = "hg19_ref"; #DEFAULT=hg19_ref
-$hg38_ref = "hg38_ref"; #DEFAULT=hg38_ref
-$mm10_ref = "mm10_ref"; #DEFAULT=mm10_ref
-
-# Software Defaults
-$gzip = "gzip"; #DEFAULT=gzip
-$zcat = "zcat"; #DEFAULT=zcat
-$bwa = "bwa"; #DEFAULT=bwa
-$samtools = "samtools"; #DEFAULT=samtools
-$scitools = "scitools"; #DEFAULT=scitools
-$macs2 = "macs2"; #DEFAULT=macs2
-$bedtools = "bedtools"; #DEFAULT=bedtools
-$Rscript = "Rscript"; #DEFAULT=Rscript
-
-# END GLOBAL DEFAULTS
-
-# MODULES
-# Note: to decrease dependencies, other modules are not used in favor of
-#   including relevant code within this script tailored to the specific
-#   functions
-use Getopt::Std; %opt = ();
-load_gradient_defaults();
-
 # VERSION INFO
 $version = "0.1.1";
 %version_info = (
 	"0.1.0" => "180215, alpha - initial development",
-	"0.1.1d" => "180418, alpha - dev split",
-	"0.1.1" => "180420, alpha - open split"
+	"0.1.1d" => "180418, alpha - dev",
+	"0.1.1" => "180427, alpha - release version"
 );
+
+# LOAD MODULES (limited for max compatibility)
+use Getopt::Std; %opt = ();
+
+# LOAD DEFAULTS
+$SCITOOLS_DEFAULTS = "/home/groups/oroaklab/src/scitools/scitools-dev/scitools.cfg"; # DEFAULT CONFIG
+if (-e "$ENV{'HOME'}/.scitools.cfg") {
+	$SCITOOLS_DEFAULTS = "$ENV{'HOME'}/.scitools.cfg";
+} elsif (-e "$ENV{'HOME'}/scitools.cfg") {
+	$SCITOOLS_DEFAULTS = "$ENV{'HOME'}/scitools.cfg";
+} elsif ($ARGV[0] =~ /\.cfg$/) {
+	# special config specification as first argument - advanced use only
+	$SCITOOLS_DEFAULTS = shift(@ARGV);
+	print STDERR "INFO: Special config file detected as first argument. ($ARGV[0])\n";
+}
+load_defaults($SCITOOLS_DEFAULTS);
+
+# LOAD GRADIENTS
+load_gradient_defaults();
 
 # COMMAND DIRECTORY
 %COMMANDS = (
@@ -67,7 +46,10 @@ $version = "0.1.1";
 	"bam-filter" => 1, "filter-bam" => 1,
 	"bam-merge" => 1, "merge-bam" => 1,
 	"bam-project" => 1, "project-bam" => 1, "project" => 1,
-	"bam-aggregate" => 1, "aggregate-bam" => 1,
+	"bam-aggregate" => 0, "aggregate-bam" => 0,
+	
+	"signal-make" => 1, "make-signal" => 1,
+	"plot-signal" => 1, "signal-plot" => 1,
 	
 	"annot-make" => 1, "make-annot" => 1,
 	"annot-merge" => 1, "merge-annot" => 1,
@@ -77,10 +59,12 @@ $version = "0.1.1";
 	"atac-counts" => 1, "atac-count" => 1, "count" => 1, "counts" => 1,
 	
 	"matrix-filter" => 1, "filter-matrix" => 1,
+	"matrix-summarize" => 0, "summarize-matrix" => 0,
 	"matrix-tf" => 1, "tf" => 1,
 	"matrix-tfidf" => 1, "tfidf" => 1,
 	"matrix-lsi" => 1, "lsi" => 1,
 	"matrix-tsne" => 1, "tsne" => 1,
+	"matrix-pca" => 1, "pca" => 1,
 	"matrix-aggregate" => 1, "aggregate-matrix" => 1,
 	
 	"dims-kmeans" => 1, "kmeans" => 1,
@@ -90,6 +74,7 @@ $version = "0.1.1";
 
 	"plot-complexity" => 1,
 	"plot-dims" => 1,
+	"plot-pcurve" => 1,
 	"plot-reads" => 1,
 	
 	"index-performance" => 1, "index-perform" => 1,
@@ -98,14 +83,16 @@ $version = "0.1.1";
 
 );
 
-# GLOBAL EMPTY VARIABLES
-$color_mapping = "none";
-
 # HELP TEXT
 $die = "
 scitools [command] [options] [arguments]
 
-Version: $version ($version_info{$version}), www.adeylab.org
+Version: $version ($version_info{$version})
+    adeylab.org & github.com/adeylab
+
+scitools is a set of commands for general processing of single-
+cell combinatorial indexing data. It is predominantly a wrapper
+for generating R or other scripts that will be stored and executed.
 
 scitools commands are in the form of [class]-[operation], calling
 a tool with just the [class] option will give a more detailed
@@ -139,6 +126,10 @@ Command:               Description:
    atac-mergepeak      Merge ATAC-seq peak files
    atac-counts         Bam and peak file to a counts matrix
    
+   signal-make         Generate windowed signal over features from bam
+   signal-plot         Plot windowed signal views
+   
+   matrix-summarize    Generate a summary and plots on matrix properties
    matrix-filter       Filter a sci-ATAC-seq counts matrix
    matrix-tf           Normalize only by term frequency
    matrix-tfidf        Perform tf-idf on counts matrix
@@ -153,6 +144,7 @@ Command:               Description:
 
    plot-complexity     Plot complexity data
    plot-dims           Plot tSNE or other dimensions file
+   plot-pcurve         Genrate multiple princurve plots
    plot-reads          Plot reads as points in genomic window
    
    index-perform       Index performance on fastq or bam
@@ -201,7 +193,7 @@ if ($command eq "split") {
 ########## GENERAL FUNCTIONS ##########
 if ($command eq "dependencies" || $command eq "depend") { # TODO: Add in checking for default file locations (e.g. hg38 etc...)
 
-getopts("R:F:O:o:I:1:2:A:B:", \%opt);
+getopts("R:F:O:o:I:1:2:A:B:P:", \%opt);
 
 $die2 = "
 scitools dependencies [options] [report output file]
@@ -221,6 +213,7 @@ Options:
    -R   [STR]   Rscript call (def = $Rscript)
    -S   [STR]   Scitools call (def = $scitools)
                 (for self-calling)
+   -P   [STR]   Python call (def = $Pscript)
 
 Hardcoded:      Gzip (def = $gzip)
                 Zcat (def = $zcat)
@@ -234,6 +227,7 @@ if (defined $opt{'B'}) {$bwa = $opt{'B'}};
 if (defined $opt{'m'}) {$macs2 = $opt{'m'}};
 if (defined $opt{'R'}) {$Rscript = $opt{'R'}};
 if (defined $opt{'S'}) {$scitools = $opt{'S'}};
+if (defined $opt{'P'}) {$Rscript = $opt{'P'}};
 
 $executable_warnings = 0;
 $R_package_warnings = 0;
@@ -259,7 +253,7 @@ foreach $dependency (@DEPENDENCIES) {
 
 print OUT "\nChecking R packages:\n"; close OUT;
 
-@R_PACKAGES = ("ggplot2","svd","Rtsne","methods","dbscan");
+@R_PACKAGES = ("ggplot2","svd","Rtsne","methods","dbscan","chromVAR","chromVARmotifs","cicero","princurve");
 open R, ">$ARGV[0].r";
 foreach $package (@R_PACKAGES) {
 	print R "if (!require($package)) {print(\"  R: WARNING: $package cannot be loaded! Some scitools functions will not be useable unless it is installed.\",quote=FALSE)} else {print(\"  $package found and loadable!\",quote=FALSE)}\n";
@@ -309,7 +303,7 @@ Should be on a pre-filetered since it will plot all barcode combos present.
 Options:
    -O   [STR]   Output prefix, will create a folder (def = input prefix)
    -I   [STR]   Index file
-         (default = $SCI_index_file)
+         (default = $VAR{'SCI_index_file'})
          (Index names must be in form of: [Tier]_[set]_[i5/i7]_[A-H/1-12])
    -A   [STR]   Annotation file (only include cell IDs in the annot file)
    -t   [INT]   Threshold of reads for a plate to include (def = $threshold)
@@ -329,14 +323,14 @@ $opt{'O'} =~ s/\.gz$//; $opt{'O'} =~ s/\.fq$//; $opt{'O'} =~ s/\.bam$//;
 if (-e "$opt{'O'}.index_performance") {die "$opt{'O'}.index_performance Directory already exists! Exiting!\n\n"};
 if (defined $opt{'R'}) {$Rscript = $opt{'R'}};
 if (defined $opt{'s'}) {$samtools = $opt{'s'}};
-if (defined $opt{'I'}) {$SCI_index_file = $opt{'I'}};
+if (defined $opt{'I'}) {$VAR{'SCI_index_file'} = $opt{'I'}};
 if (defined $opt{'t'}) {$threshold = $opt{'t'}};
 if (defined $opt{'A'}) {read_annot($opt{'A'})};
 if (!defined $opt{'G'}) {$opt{'G'} = $gradient_def};
 $gradient_function = get_gradient($opt{'G'});
 $gradient_function =~ s/\)$//; $gradient_function .= ",bias=0.65)";
 
-read_indexes($SCI_index_file);
+read_indexes($VAR{'SCI_index_file'});
 
 %CELLID_count = ();
 if ($ARGV[0] =~ /\.bam$/) {
@@ -533,13 +527,13 @@ Options:
 
 Defaults:
    -F   [STR]   Fastq directory
-         ($fastq_input_directory)
+         ($VAR{'fastq_input_directory'})
    -O   [STR]   Output fastq directory
-         ($SCI_fastq_directory)
+         ($VAR{'SCI_fastq_directory'})
    -o   [STR]   Output prefix
          (def = run name)
    -I   [STR]   SCI index master file
-         ($SCI_index_file)
+         ($VAR{'SCI_index_file'})
 
 To specify specific fastq files instead of defaults:
    (can be comma sep for multiple)
@@ -553,10 +547,10 @@ Will split with a hamming distance of 2
 ";
 
 if (!defined $opt{'R'}) {die $die2};
-if (!defined $opt{'F'}) {$opt{'F'} = $fastq_input_directory};
-if (!defined $opt{'O'}) {$opt{'O'} = $SCI_fastq_directory};
+if (!defined $opt{'F'}) {$opt{'F'} = $VAR{'fastq_input_directory'}};
+if (!defined $opt{'O'}) {$opt{'O'} = $VAR{'SCI_fastq_directory'}};
 if (!defined $opt{'o'}) {$opt{'o'} = $opt{'R'}};
-if (!defined $opt{'I'}) {$opt{'I'} = $SCI_index_file};
+if (!defined $opt{'I'}) {$opt{'I'} = $VAR{'SCI_index_file'}};
 
 open IN, "$opt{'I'}";
 while ($l = <IN>) {
@@ -908,9 +902,7 @@ Options:
    -m   [MEM]   Samtools sort mex memory per thread, K/M/G (def = $memory)
 
 Bwa reference shortcuts:
-   hg19   $hg19_ref
-   hg38   $hg38_ref
-   mm10   $mm10_ref
+$ref_shortcuts
 
 ";
 
@@ -922,9 +914,10 @@ if (defined $opt{'s'}) {$samtools = $opt{'s'}};
 if (!defined $opt{'t'}) {$opt{'t'} = $threads};
 if (!defined $opt{'m'}) {$opt{'m'} = $memory};
 
-if ($ARGV[0] eq "hg19") {$ARGV[0] = $hg19_ref};
-if ($ARGV[0] eq "hg38") {$ARGV[0] = $hg38_ref};
-if ($ARGV[0] eq "mm10") {$ARGV[0] = $mm10_ref};
+if (defined $REF{$ARGV[0]}) {
+	$ref_file = $REF{$ARGV[0]};
+	$ARGV[0] = $ref_file;
+}
 
 system("$bwa mem -t $opt{'t'} $ARGV[0] $ARGV[1] $ARGV[2] 2>> $ARGV[3].align.log | $samtools view -bSu - 2>> $ARGV[3].align.log | $samtools sort -m $opt{'m'} -T $ARGV[3].TMP - > $ARGV[3].bam 2>> $ARGV[3].align.log");
 
@@ -949,7 +942,7 @@ scitools annot-make [options] [annotation_description_1] [annotaiton_description
 Options:
    -O   [STR]   Output annotation file (default = STDOUT)
    -I   [STR]   Index file
-         (default = $SCI_index_file)
+         (default = $VAR{'SCI_index_file'})
          (Index names must be in form of: [Tier]_[set]_[i5/i7]_[A-H/1-12])
    -P   [STR]   Plate descriptor file (instead of written descriptors)
    -p           Print out sample plate file for modificaiton and exit
@@ -964,7 +957,7 @@ scitools annot-make [options] [annotation_description_1] [annotaiton_description
 Options:
    -O   [STR]   Output annotation file (default = STDOUT)
    -I   [STR]   Index file
-         (default = $SCI_index_file)
+         (default = $VAR{'SCI_index_file'})
          (Index names must be in form of: [Tier]_[set]_[i5/i7]_[A-H/1-12])
    -P   [STR]   Plate descriptor file (instead of written descriptors)
    -p           Print out sample plate file for modificaiton and exit
@@ -1054,7 +1047,7 @@ exit;
 if (!defined $ARGV[0] && !defined $opt{'P'}) {die $die2};
 
 # Read in index file
-open IN, $SCI_index_file;
+open IN, $VAR{'SCI_index_file'};
 while ($l = <IN>) {
 	chomp $l;
 	($ID,$pos,$seq) = split(/\t/, $l);
@@ -2126,7 +2119,7 @@ Options:
    -b   [STR]   Bedtools call (def = $bedtools)
    -m   [STR]   Macs2 call (def = $macs2)
    -s   [STR]   Samtools call (def = $samtools)
-   -f   [STR]   Fai file for chr lengths (hg19, hg38, and mm10 are shortcuts)
+   -f   [STR]   Fai file for chr lengths (shorcut examples: hg19, hg38, and mm10 if in .cfg)
                 If toggled will ensure n peaks extend beyond
    -X           Retain intermediate files (def = remove)
 
@@ -2138,12 +2131,8 @@ if (defined $opt{'l'}) {$min_feature_size = $opt{'l'}};
 if (defined $opt{'s'}) {$samtools = $opt{'s'}};
 
 if (defined $opt{'f'}) {
-	if ($opt{'f'} eq "hg19") {
-		open FAI, "$hg19_ref.fai";
-	} elsif ($opt{'f'} eq "mm10") {
-		open FAI, "$mm10_ref.fai";
-	} elsif ($opt{'f'} eq "hg38") {
-		open FAI, "$hg38_ref.fai";
+	if (defined $REF{$opt{'f'}}) {
+		open FAI, "$REF{$opt{'f'}}.fai";
 	} else {
 		open FAI, "$opt{'f'}";
 	}
@@ -2323,7 +2312,385 @@ for ($i = 0; $i < @CELL_ID_LIST; $i++) {
 exit;
 }
 
+########## SIGNAL FUNCTIONS ##########
+if ($command eq "signal-make" || $command eq "make-signal") {
+
+# Defaults
+$span_size = 5000;
+$sub_size = 500;
+$slide_size = 250;
+$matching_annot = "TRUE";
+
+getopts("O:A:a:W:w:l:b:s:Xn:r", \%opt);
+
+$die2 = "
+scitools signal-make [options] [bam file] [bed file of features]
+   or    make-signal
+
+This tool will generate a specialized matrix file with multiple entries
+over each window provided. Columns are the annotaiton and the sub-window
+and rows are the bed file features. It also produces a z-scored singal
+matrix where the z-score is produced for all sub windows within the
+annotation.
+
+Options:
+   -O   [STR]   Output prefix (default is [bam prefix].[bed prefix].signal)
+   -A   [STR]   Annotation file (will aggregate signal over the annotations)
+                  Note: if not provided, will assume signal for every cellID
+                  wich is not recommended - for plotting individual cells, use
+                  'scitools plot-reads'
+   -a   [STR]   Comma separated list of annotations to include (requires -A)
+                  Will position annotations in the specified order
+   -r           Order rows by the order of the input bed file (overrides -n)
+   -n   [STR]   Sort by the signal for this annotation.
+                  Default is to sort by all (if no -A), by subsets of matching
+                  bed and cell annotations (ie bed names are the same as annot
+                  names), or by the first annotation listed.
+   -W   [INT]   Window size - the span of the signal view (def = $span_size)
+   -w   [INT]   Sub-window size for signal (def = $sub_size)
+   -l   [INT]   Sub-window slide size (def = $slide_size)
+   -b   [STR]   Bedtools call (def = $bedtools)
+   -s   [STR]   Samtools call (def = $samtools)
+   -X           Do not delete intermediate files (def = delete)
+
+";
+
+if (!defined $ARGV[1]) {die $die2};
+if (defined $opt{'a'} && !defined $opt{'A'}) {die "\nMust provide an annotaiton file (-A) if specifying annotations to filter (-a)!\n$die2"};
+if (!defined $opt{'O'}) {
+	$opt{'O'} = $ARGV[0]; $opt{'O'} =~ s/bam$//;
+	$opt{'O'} .= $ARGV[1]; $opt{'O'} =~ s/\.bed$//;
+}
+if (defined $opt{'W'}) {$span_size = $opt{'W'}};
+if (defined $opt{'w'}) {$sub_size = $opt{'w'}};
+if (defined $opt{'l'}) {$slide_size = $opt{'l'}};
+
+if (!defined $opt{'A'}) {
+	print STDERR "
+WARNING: No annotation specified - will treat as a single annotation.\n";
+	open IN, "$samtools view $ARGV[0] |";
+	while ($l = <IN>) {
+		chomp $l;
+		@P = split(/\t/, $l);
+		($cellID,$other) = split(/:/, $P[0]);
+		$CELLID_annot{$cellID} = $cellID;
+		$ANNOT_read_count{'all'}++;
+	} close IN;
+} else {
+	read_annot($opt{'A'});
+	open IN, "$samtools view $ARGV[0] |";
+	while ($l = <IN>) {
+		chomp $l;
+		@P = split(/\t/, $l);
+		($cellID,$other) = split(/:/, $P[0]);
+		if (defined $CELLID_annot{$cellID}) {
+			$ANNOT_read_count{$CELLID_annot{$cellID}}++;
+		}
+	} close IN;
+}
+
+if (defined $opt{'a'}) {
+	@ANNOT_LIST = split(/,/, $opt{'a'});
+	foreach $annot (@ANNOT_LIST) {
+		$ANNOT_include{$annot} = 1;
+	}
+} else {
+	foreach $annot (sort keys %ANNOT_read_count) {
+		$ANNOT_include{$annot} = 1;
+		push @ANNOT_LIST, $annot;
+	}
+}
+
+$flank_size = int($span_size/2);
+
+# make temporary bed file with subwindows
+open IN, "$ARGV[1]";
+open OUT, "| $bedtools sort -i - > $opt{'O'}.signal.subwin.bed";
+while ($l = <IN>) {
+	chomp $l;
+	@P = split(/\t/, $l);
+	$chr = $P[0];
+	$start = $P[1];
+	$end = $P[2];
+	$winID = "$chr\_$start\_$end";
+	if (defined $P[3]) {
+		$fgroup = $P[3];
+		if (!defined $ANNOT_include{$P[3]}) {
+			$matching_annot = "FALSE";
+		}
+	} else {
+		$fgroup = "Feature";
+	}
+	$FGROUP_count{$fgroup}++;
+	$WINID_fgroup{$winID} = $fgroup;
+	$FGROUP_WINID_list{$fgroup}{$winID} = 1;
+	$WINID_list{$winID} = 1;
+	$midPt = int(($start+$end)/2);
+	if (($midPt-$flank_size)>0) {
+		$subNum = 0;
+		for ($i = ($midPt-$flank_size); $i <= ($midPt+$flank_size)-$sub_size; $i += $slide_size) {
+			print OUT "$chr\t$i\t".($i+$sub_size)."\t$winID\t$subNum\n";
+			$subNum++;
+		}
+		$totwin = $subNum-1;
+	}
+	$featureCT++;
+} close IN; close OUT;
+
+# intitalize counts
+foreach $winID (keys %WINID_list) {
+	for ($i = 0; $i <= $totwin; $i++) {
+		foreach $annot (keys %ANNOT_include) {
+			$WINID_SUB_ANNOT_count{$winID}{"$annot\_window_$i"} = 0;
+		}
+	}
+}
+
+# intersect to get counts
+open IN, "$bedtools intersect -abam $ARGV[0] -b $opt{'O'}.signal.subwin.bed -bed -wa -wb 2>/dev/null |";
+while ($l = <IN>) {
+	chomp $l;
+	@P = split(/\t/, $l);
+	($cellID,$other) = split(/:/, $P[3]);
+	if (defined $CELLID_annot{$cellID}) {
+		$annot = $CELLID_annot{$cellID};
+		$winID = $P[15];
+		$subWin = $P[16];
+		$subID = "$annot\_window_$subWin";
+		$SUBID_annot{$subID} = $annot;
+		$WINID_SUB_ANNOT_count{$winID}{$subID}++;
+	}
+} close IN;
+
+# print the signal matrix
+open OUT, ">$opt{'O'}.raw.signal";
+open NRM, ">$opt{'O'}.norm.signal";
+
+$header = ""; @COLNAMES = ();
+for ($annot_pos = 0; $annot_pos < @ANNOT_LIST; $annot_pos++) {
+	$annot = $ANNOT_LIST[$annot_pos];
+	for ($subWin = 0; $subWin <= $totwin; $subWin++) {
+		$header .= "$annot\_window_$subWin\t";
+		push @COLNAMES, "$annot\_window_$subWin";
+	}
+} $header =~ s/\t$//;
+print OUT "$header\n";
+print NRM "$header\n";
+
+# order rows
+$midWin = int($totwin/2); @ROW_ORDER = ();
+if (defined $opt{'r'}) {
+	open IN, "$ARGV[1]";
+	while ($l = <IN>) {
+		chomp $l;
+		@P = split(/\t/, $l);
+		$winID = "$P[0]\_$P[1]\_$P[2]";
+		if (defined $WINID_list{$winID}) {
+			push @ROW_ORDER, $winID;
+		}
+	} close IN;
+} elsif (!defined $opt{'A'}) {
+	$midWinID = "all_window_$midWin";
+	foreach $fgroup (sort keys %FGROUP_WINID_list) {
+		foreach $winID (sort {$WINID_SUB_ANNOT_count{$b}{$midWinID}<=>$WINID_SUB_ANNOT_count{$a}{$midWinID}} keys %{$FGROUP_WINID_list{$fgroup}}) {
+			push @ROW_ORDER, $winID;
+		}
+	}
+} else {
+	if (defined $opt{'n'}) {
+		$midWinID = "$opt{'n'}\_window_$midWin";
+		foreach $winID (sort {$WINID_SUB_ANNOT_count{$b}{$midWinID}<=>$WINID_SUB_ANNOT_count{$a}{$midWinID}} keys %WINID_SUB_ANNOT_count) {
+			push @ROW_ORDER, $winID;
+		}
+	} elsif ($matching_annot = "TRUE") {
+		for ($annot_pos = 0; $annot_pos < @ANNOT_LIST; $annot_pos++) {
+			$annot = $ANNOT_LIST[$annot_pos];
+			$midWinID = "$annot\_window_$midWin";
+			foreach $winID (sort {$WINID_SUB_ANNOT_count{$b}{$midWinID}<=>$WINID_SUB_ANNOT_count{$a}{$midWinID}} keys %{$FGROUP_WINID_list{$annot}}) {
+				push @ROW_ORDER, $winID;
+			}
+		}
+	} else {
+		($annot,$null) = split(/_window_/, $COLNAMES[0]);
+		print STDERR "INFO: Annotaiton for cells provided, but annotaitons of peaks do not all match cell annotations.
+      If this is incorrect - double check that annotaitons and bed feature names match.
+      Proceeding with sorting on the first listed annotation: $annot\n";
+		$midWinID = "$annot\_window_$midWin";
+		foreach $fgroup (sort keys %FGROUP_WINID_list) {
+			foreach $winID (sort {$WINID_SUB_ANNOT_count{$b}{$midWinID}<=>$WINID_SUB_ANNOT_count{$a}{$midWinID}} keys %{$FGROUP_WINID_list{$fgroup}}) {
+				push @ROW_ORDER, $winID;
+			}
+		}
+	}
+}
+
+
+# print raw and norm
+for ($row_pos = 0; $row_pos < @ROW_ORDER; $row_pos++) {
+	$winID = $ROW_ORDER[$row_pos];
+	print OUT "$winID"; print NRM "$winID";
+	for ($colNum = 0; $colNum < @COLNAMES; $colNum++) {
+		$subID = $COLNAMES[$colNum];
+		$annot = $SUBID_annot{$subID};
+		if (!defined $WINID_SUB_ANNOT_count{$winID}{$subID}) {
+			$WINID_SUB_ANNOT_count{$winID}{$subID} = 0;
+		}
+		print OUT "\t$WINID_SUB_ANNOT_count{$winID}{$subID}";
+		$nrm = sprintf("%.4f", ($WINID_SUB_ANNOT_count{$winID}{$subID}/$ANNOT_read_count{$annot})*($featureCT*$totwin));
+		print NRM "\t$nrm";
+		$ANNOT_posCT{$annot}++;
+		$ANNOT_sum{$annot}+=$WINID_SUB_ANNOT_count{$winID}{$subID};
+		push @{$ANNOT_values{$annot}}, $WINID_SUB_ANNOT_count{$winID}{$subID};
+	}
+	print OUT "\n"; print NRM "\n";
+}
+close OUT; close NRM;
+
+# calculate each annot mean
+foreach $annot (keys %ANNOT_posCT) {
+	$ANNOT_mean{$annot} = $ANNOT_sum{$annot}/$ANNOT_posCT{$annot};
+	$stdev_sum = 0;
+	foreach $value (@{$ANNOT_values{$annot}}) {
+		$stdev_sum += ($ANNOT_mean{$annot} - $value)**2;
+	}
+	$ANNOT_stdev{$annot} = sqrt($stdev_sum/$ANNOT_posCT{$annot});
+}
+
+open OUT, ">$opt{'O'}.zscore.signal";
+print OUT "$header\n";
+
+for ($row_pos = 0; $row_pos < @ROW_ORDER; $row_pos++) {
+	$winID = $ROW_ORDER[$row_pos];
+	print OUT "$winID";
+	for ($colNum = 0; $colNum < @COLNAMES; $colNum++) {
+		$subID = $COLNAMES[$colNum];
+		$annot = $SUBID_annot{$subID};
+		$zscore = sprintf("%.4f", ($WINID_SUB_ANNOT_count{$winID}{$subID}-$ANNOT_mean{$annot})/$ANNOT_stdev{$annot});
+		print OUT "\t$zscore";
+	}
+	print OUT "\n";
+}
+close OUT;
+
+
+if (!defined $opt{'X'}) {
+	system("rm -f $opt{'O'}.signal.subwin.bed");
+}
+
+exit;
+}
+
+
 ########## MATRIX FUNCTIONS ##########
+if ($command eq "matrix-summarize" || $command eq "summarize-matrix") { # TODO: EXPAND ON THIS!
+
+getopts("O:R:XA:a:", \%opt);
+
+$die2 = "
+scitools matrix-summarize [options] [matrix of any kind]
+   or    summarize-matrix
+   
+Generates summaries on the matrix file and plots some of the properties.
+
+Options:
+   -O   [STR]   Output prefix (default is [input_matrix].suffix)
+   -R   [STR]   Rscript call (def = $Rscript)
+   -X           Retain intermediate files (def = delete)
+
+";
+
+if (!defined $ARGV[0]) {die $die2};
+if (!defined $opt{'O'}) {$opt{'O'} = $ARGV[0]};
+
+# initialize stats
+$ncol = 0; $nrow = 0;
+$maxVal = "na"; $minVal = "na";
+$sum = 0;
+$nonzero = 0; $nrow_nonzero = 0; $ncol_nonzero = 0;
+$mean = 0; $stdev = 0;
+
+open STATS, ">$opt{'O'}.stats";
+open ROW_DATA, ">$opt{'O'}.row.stats";
+print ROW_DATA "mean\tstdev\tmin\tmax\tsum\tnonzero\n";
+open COL_DATA, ">$opt{'O'}.col.stats";
+print COL_DATA "mean\tstdev\tmin\tmax\tsum\tnonzero\n";
+open COL_DIST, ">$opt{'O'}.col.vals";
+
+open IN, "$ARGV[0]";
+$h = <IN>; chomp $h; @H = split(/\t/, $h);
+$ncol = @H;
+
+for ($i = 0; $i < @H; $i++) {
+	@{$COL_values[$i]} = ();
+}
+
+while ($l = <IN>) {
+	chomp $l;
+	@P = split(/\t/, $l);
+	$rowID = shift(@P);
+	$row_sum = 0; $row_mean = 0; $row_stdev_sum = 0; $row_stdev = 0; $row_nonzero = 0; $row_min = $P[0]; $row_max = $P[0];
+	for ($i = 0; $i < @H; $i++) {
+		$sum+=$P[0];
+		if ($P[$i] != 0) {$nonzero++; $row_nonzero++};
+		if ($minVal eq "na" || $P[$i] < $minVal) {$minVal = $P[$i]};
+		if ($maxVal eq "na" || $P[$i] > $maxVal) {$maxVal = $P[$i]};
+		$row_sum += $P[$i];
+		if ($P[$i] < $row_min) {$row_min = $P[$i]};
+		if ($P[$i] > $row_max) {$row_max = $P[$i]};
+		push @{$COL_values[$i]}, $P[$i];
+	}
+	$row_mean = $row_sum/$ncol;
+	for ($i = 0; $i < @H; $i++) {
+		$row_stdev_sum += ($P[$i] - $row_mean)**2;
+	}
+	$row_stdev = sqrt($row_stdev_sum/$ncol);
+	print ROW_DATA "$rowID\t$row_mean\t$row_stdev\t$row_min\t$row_max\t$row_sum\t$row_nonzero\n";
+	if ($row_nonzero>0) {$nrow_nonzero++};
+	$nrow++;
+} close IN; close ROW_DATA;
+
+$mean = $sum/($ncol*$nrow);
+$stdevSum = 0;
+
+for ($i = 0; $i < @H; $i++) {
+	$col_sum = 0; $col_mean = 0; $col_stdev_sum = 0; $col_stdev = 0; $col_nonzero = 0; $col_min = $COL_values[$i][0]; $col_max = $COL_values[$i][0];
+	for ($j = 0; $j < @{$COL_values[$i]}; $j++) {
+		$val = $COL_values[$i][$j];
+		$col_sum += $val;
+		if ($val > $col_max) {$col_max = $val};
+		if ($val < $col_min) {$col_min = $val};
+		if ($val != 0) {$col_nonzero++};
+	}
+	$col_mean = $col_sum/@{$COL_values[$i]};
+	for ($j = 0; $j < @{$COL_values[$i]}; $j++) {
+		$val = $COL_values[$i][$j];
+		$col_stdev_sum += ($val - $col_mean)**2;
+		$stdev_sum += ($val - $mean)**2;
+		print COL_DIST "$H[$i]\t$val\n";
+	}
+	$col_stdev = sqrt($col_stdev_sum/@{$COL_values[$i]});
+	print COL_DATA "$H[$i]\t$col_mean\t$col_stdev\t$col_min\t$col_max\t$col_sum\t$col_nonzero\n";
+	if ($col_nonzero>0) {$ncol_nonzero++};
+} close COL_DATA; close COL_DIST;
+
+$stdev = sqrt($stdev_sum/($ncol*$nrow));
+
+print STATS "Matrix        $ARGV[0]
+Columns       $ncol
+Rows          $nrow
+Mean          $mean
+Stdev         $stdev
+Min           $minVal
+Max           $maxVal
+Nonzero_rows  $nrow_nonzero
+Nonzero_cols  $ncol_nonzero
+Nonzero_vals  $nonzero
+Matrix_sum    $sum
+"; close STATS;
+
+exit;
+}
+
 if ($command eq "matrix-filter" || $command eq "filter-matrix") { # TODO: Mem efficiency (at some point)
 
 # Defaults
@@ -3073,7 +3440,7 @@ if (!defined $opt{'X'}) {
 exit;
 }
 
-if ($command eq "aggregate-cells" || $command eq "aggregate") { # TODO: LABDA BASED! Also - reassign orphans.
+if ($command eq "aggregate-cells" || $command eq "aggregate") {
 
 # Defaults
 $range_default = "1-2";
@@ -3105,6 +3472,7 @@ Options:
                 annotation memberships if >1. (def = $oversample)
    -K   [INT]   Number of clusters (overrides -N to be the min/aggregate)
                 This will utilize standard k-means to aggregate cells
+                For lambda clustering it will evenly space them
    -A   [STR]   Annotation file (will only merge within annot)
    -a   [STR]   Comma separated list of annotations to include
                   (requires -A to be specified)
@@ -3137,13 +3505,32 @@ if (defined $opt{'v'}) {$oversample = $opt{'v'}};
 if ($ARGV[0] =~ /\.(lambda|values)$/) {
 	print STDERR "INFO: A lambda or values file was detected - will aggregate in one dimension\n";
 	if (!defined $opt{'D'}) {$opt{'D'} = 1};
+	read_values($ARGV[0]);
+	if (defined $opt{'A'}) {
+		read_annot($opt{'A'});
+	} else {
+		foreach $cellID (keys %CELLID_value) {
+			$CELLID_annot{$cellID} = "Agg";
+		}
+		$ANNOT_include{"Agg"} = 1;
+	}
+} else {
+	read_dims($ARGV[0]);
+	if (defined $opt{'A'}) {
+		read_annot($opt{'A'});
+	} else {
+		foreach $cellID (keys %CELLID_DIMS) {
+			$CELLID_annot{$cellID} = "Agg";
+		}
+		$ANNOT_include{"Agg"} = 1;
+	}
 }
 
 if (!defined $opt{'O'}) {$opt{'O'} = $ARGV[0]};
 $opt{'O'} =~ s/\.(dims|lambda|values)$//;
 
 if (defined $opt{'R'}) {$Rscript = $opt{'R'}};
-if (defined $opt{'A'}) {read_annot($opt{'A'})};
+
 if (defined $opt{'a'}) {
 	@ANNOT_LIST = split(/,/, $opt{'a'});
 	foreach $annot (@ANNOT_LIST) {
@@ -3154,6 +3541,7 @@ if (defined $opt{'a'}) {
 		$ANNOT_include{$annot} = 1;
 	}
 }
+
 if (defined $opt{'C'}) {read_color_file($opt{'C'})};
 if (defined $opt{'c'}) {read_color_string($opt{'c'})};
 
@@ -3163,25 +3551,185 @@ $xpos = $xdim-1; $ypos = $ydim-1;
 
 read_ranges($opt{'D'});
 
-if (!defined $opt{'A'}) {
-	foreach $cellID (keys %CELLID_DIMS) {
-		$CELLID_annot{$cellID} = "Agg";
+if ($ARGV[0] =~ /\.(lambda|values)$/) {
+	# figure out even spaced vs. even cell N
+	# if -K, then will be evenly spaced on lambda - uniform for all annotations
+	# elsif -N, then will be even number of cells - varable for annotations
+	if (defined $opt{'K'}) { # find centroids that will be constant across all annotations
+		%CLUST_global_centroid = ();
+		$clust_span = $value_range/$opt{'K'};
+		$center = $clust_span/2;
+		$clustID = 0;
+		$CLUST_global_centroid{$clustID} = $center;
+		for ($clustID = 1; $clustID < $opt{'K'}; $clustID++) {
+			$center += $clust_span;
+			$CLUST_global_centroid{$clustID} = $center;
+		}
 	}
-	$ANNOT_include{"Agg"} = 1;
 }
 
 open CNT, ">$opt{'O'}.centroids.dims";
 open OUT, ">$opt{'O'}.aggregate.annot";
 
-# loop through annotaitons individually
+# loop through annotations individually
 foreach $annot (keys %ANNOT_include) {
 if ($ARGV[0] =~ /\.(lambda|values)$/) {
 	# lambda file
-	read_values($ARGV[0]);
+	# setup new CLUST center hash for the annot - all can be annot-only, no need for global to be kept
+	%CLUST_center = (); $assignment_count = 0; %CLUST_assignments = (); %CELLID_initial_cluster = (); %CLUST_cellIDs = ();
+	# setup cluster centroids based on K or N
+	if (defined $opt{'K'}) { # copy over the clusters and add in the annot
+		foreach $clustID (keys %CLUST_global_centroid) {
+			$CLUST_center{$annot."_".$clustID} = $CLUST_global_centroid{$clustID};
+		}
+		# now do initial assignments based on closest center
+		foreach $cellID (keys %CELLID_value) {
+			if ($CELLID_annot{$cellID} eq $annot) {
+				$minDist = 1e9; $winAsn = "NA";
+				foreach $clustID (keys %CLUST_center) {
+					$dist = abs($CELLID_value{$cellID} - $CLUST_center{$clustID});
+					if ($dist<$minDist) {
+						$minDist = $dist;
+						$winAsn = $clustID;
+					}
+				}
+				$CELLID_initial_cluster{$cellID} = $winAsn;
+				push @{$CLUST_cellIDs{$winAsn}}, $cellID;
+				$CLUST_assignments{$winAsn}++;
+				$assignment_count++;
+			}
+		}
+		# now check for reaching min n, remove other clusters and do orphan assignment
+		%CELLID_orphan = ();
+		foreach $clustID (keys %CLUST_center) {
+			if ($CLUST_assignments{$clustID} < $minN) {
+				print STDERR "INFO: Cluster $clustID has $CLUST_assignments{$clustID} cells assigned which is < $minN, and will be removed and have cells re-assigned.\n";
+				delete $CLUST_center{$clustID};
+				foreach $cellID (@{$CLUST_cellIDs{$clustID}}) {
+					$CELLID_orphan{$cellID} = 1;
+				}
+				delete $CLUST_cellIDs{$clustID};
+			}
+		}
+		foreach $cellID (keys %CELLID_orphan) {
+			$minDist = 1e9; $winAsn = "NA";
+			foreach $clustID (keys %CLUST_center) {
+				$dist = abs($CELLID_value{$cellID} - $CLUST_center{$clustID});
+				if ($dist<$minDist) {
+					$minDist = $dist;
+					$winAsn = $clustID;
+				}
+			}
+			$CELLID_initial_cluster{$cellID} = $winAsn;
+			push @{$CLUST_cellIDs{$winAsn}}, $cellID;
+			$CLUST_assignments{$winAsn}++;
+		}
+	} else {
+		# go through cells and calculate the center for each grouping - also do initial assignment
+		$clustNum = 0; $clust_sum = 0; $clust_memberCT = 0; $clustID = $annot."_".$clustNum; $annot_cellCT_in_lambda = 0;
+		foreach $cellID (keys %CELLID_value) {
+			if ($CELLID_annot{$cellID} eq $annot) {
+				$annot_cellCT_in_lambda++;
+			}
+		}
+		$cluster_ct = int($annot_cellCT_in_lambda/$aggN);
+		if ($cluster_ct < 2) {
+			$cluster_ct = 2;
+			print STDERR "WARNING: The N value specified, $aggN, results in cluster numbers less than 2 (cells in $annot = $annot_cellCT_in_lambda), setting to 2\n";
+		}
+		$target_assignments = int($annot_cellCT_in_lambda/$cluster_ct);
+		foreach $cellID (sort {$CELLID_value{$a}<=>$CELLID_value{$b}} keys %CELLID_value) {
+			if ($CELLID_annot{$cellID} eq $annot) {
+				$clust_memberCT++;
+				$clust_sum += $CELLID_value{$cellID};
+				$CELLID_initial_cluster{$cellID} = $clustID;
+				push @{$CLUST_cellIDs{$clustID}}, $cellID;
+				$assignment_count++;
+				if ($clust_memberCT >= $target_assignments) {
+					$center = $clust_sum/$clust_memberCT;
+					$CLUST_center{$clustID} = $center;
+					$clustNum++; $clust_sum = 0; $clust_memberCT = 0; $clustID = $annot."_".$clustNum; 
+				}
+			}
+		}
+		# last one
+		$center = $clust_sum/$clust_memberCT;
+		$CLUST_center{$clustID} = $center;
+	}
+	
+	# now check if there is oversampling
+	if ($oversample>1) {
+		%CELLID_cluster = ();
+		if (defined $opt{'K'}) { # oversample for each cluster
+			foreach $clustID (keys %CLUST_center) {
+				$target_assignments = int(($CLUST_assignments{$clustID}*$oversample)+1);
+				%CELLID_dist = ();
+				foreach $cellID (keys %CELLID_value) {
+					if ($CELLID_annot{$cellID} eq $annot && $CELLID_initial_cluster{$cellID} ne $clustID) {
+						$CELLID_dist{$cellID} = abs($CELLID_value{$cellID} - $CLUST_center{$clustID});
+					} elsif ($CELLID_annot{$cellID} eq $annot && $CELLID_initial_cluster{$cellID} eq $clustID) {
+						$CELLID_cluster{$cellID} .= "$clustID,";
+					}
+				}
+				foreach $cellID (sort {$CELLID_dist{$a}<=>$CELLID_dist{$b}} keys %CELLID_dist) {
+					if ($CLUST_assignments{$clustID}<$target_assignments) {
+						$CELLID_cluster{$cellID} .= "$clustID,";
+						$CLUST_assignments{$clustID}++;
+						push @{$CLUST_cellIDs{$clustID}}, $cellID;
+					}
+				}
+			}
+			foreach $clustID (keys %CLUST_center) { # no center changes, so print centroids
+				print CNT "$clustID\t$CLUST_center{$clustID}\n";
+			}
+		} else {
+			$added_assignments = ($annot_cellCT_in_lambda*($oversample-1));
+			$target_assignments += int(($added_assignments/$clustNum)+1);
+			foreach $clustID (keys %CLUST_center) {
+				%CELLID_dist = ();
+				foreach $cellID (keys %CELLID_value) {
+					if ($CELLID_annot{$cellID} eq $annot && $CELLID_initial_cluster{$cellID} ne $clustID) {
+						$CELLID_dist{$cellID} = abs($CELLID_value{$cellID} - $CLUST_center{$clustID});
+					} elsif ($CELLID_annot{$cellID} eq $annot && $CELLID_initial_cluster{$cellID} eq $clustID) {
+						$CELLID_cluster{$cellID} .= "$clustID,";
+					}
+				}
+				foreach $cellID (sort {$CELLID_dist{$a}<=>$CELLID_dist{$b}} keys %CELLID_dist) {
+					if ($CLUST_assignments{$clustID}<$target_assignments) {
+						$CELLID_cluster{$cellID} .= "$clustID,";
+						$CLUST_assignments{$clustID}++;
+						push @{$CLUST_cellIDs{$clustID}}, $cellID;
+					}
+				}
+			}
+			# remake centroid & print
+			foreach $clustID (keys %CLUST_center) {
+				$clust_sum = 0; $clust_memberCT = 0;
+				foreach $cellID (@{$CLUST_cellIDs{$clustID}}) {
+					$clust_sum+=$CELLID_value{$cellID};
+					$clust_memberCT++;
+				}
+				$CLUST_center{$clustID} = $clust_sum/$clust_memberCT;
+				print CNT "$clustID\t$CLUST_center{$clustID}\n";
+			}
+		}
+		# print out annot
+		foreach $cellID (keys %CELLID_cluster) {
+			$cluster_set = $CELLID_cluster{$cellID};
+			$cluster_set =~ s/,$//;
+			print OUT "$cellID\t$cluster_set\n";
+		}
+	} else { # no oversampling
+		foreach $clustID (keys %CLUST_center) {
+			print CNT "$clustID\t$CLUST_center{$clustID}\n";
+			foreach $cellID (@{$CLUST_cellIDs{$clustID}}) {
+				print OUT "$cellID\t$clustID\n";
+			}
+		}
+	}
 	
 } else {
 	# Dimensions file
-	read_dims($ARGV[0]);
 	
 	%CLUST_include = ();
 	%CELLID_initial_cluster = ();
@@ -3331,8 +3879,8 @@ close CNT; close OUT;
 
 # Plot the projections of cells to their centroids
 if ($ARGV[0] =~ /\.(lambda|values)$/) {
-	# labmda data plot
-	
+	# labmda data plots?
+	# NOT CURRENTLY SUPPORTED
 } else {
 # Dimensions data & plot
 open PD, ">$opt{'O'}.aggregate_data";
@@ -3764,6 +4312,415 @@ if (!defined $opt{'X'}) {
 exit;
 }
 
+if ($command eq "plot-pcurve") {
+
+# Defaults
+$xdim = 1;
+$ydim = 2;
+$alpha = 1;
+$ptSize = 1;
+$theme = "Clean";
+$gradient_def = "YlOrRd";
+
+getopts("O:A:a:C:c:R:x:y:T:Xo:p:l:G:M:f:s:", \%opt);
+
+$die2 = "
+scitools plot-dims [options] [pcurve prefix]
+
+Will search for [prefix].orig.dims
+                [prefix].proj.dims
+                [prefix].lambda (or [prefix].centered.lambda)
+
+Options:
+   -O   [STR]   Output prefix (default is input prefix)
+   -o   [STR]   Original dims file (def = auto find [prefix].orig.dims)
+   -p   [STR]   Pcurve dims file (def = auto find [prefix].proj.dims)
+   -l   [STR]   Lambda file (def = auto find [prefix].lambda)
+                (if [prefix].centered.lambda is found, it will use that)
+   -M   [STR]   Matrix file - will plot each value set in a matrix
+                along the lambda values of the pcurve
+   -f   [FLT]   Alpha of points (for -M plotting; def = $alpha)
+   -s   [FLT]   Point size (def = $ptSize)
+   -A   [STR]   Annotation file (to color code points)
+   -a   [STR]   Comma separated list of annoations to include in plot
+                  (requires -A to be specified)
+   -x   [INT]   X-dimension to plot (def = $xdim)
+   -y   [INT]   Y-dimension to plot (def = $ydim)
+   -T   [STR]   Theme: (def = $theme)
+                  Clean = no axis lines (for tSNE)
+                  Reg = regular, include axes and grid (for PCA)
+   -C   [STR]   Color coding file (annot (tab) #hexColor)
+   -c   [STR]   Color coding string
+                  Annot=#hexColor,Annot2=#hexColor
+   -G   [GRD]   Color gradient for labmda (def = $gradient_def)
+                  For all available gradients, run 'scitools gradient'
+   -R   [STR]   Rscript call (def = $Rscript)
+   -X           Do not delete intermediate files (def = delete)
+
+Note: Requires ggplot2 R package
+
+If -O -o -p and -l are all defined [pcurve prefix] does not need to be
+specified to execute this command.
+
+";
+
+if (!defined $ARGV[0]) { 
+    if(!defined $opt{'O'} &&
+	   !defined $opt{'o'} &&
+	   !defined $opt{'p'} &&
+	   !defined $opt{'l'}) {die $die2};
+}
+if (defined $opt{'a'} && !defined $opt{'A'}) {die "\nMust provide an annotaiton file (-A) if specifying annotations to plot (-a)!\n$die2"};
+if (defined $opt{'C'} && defined $opt{'c'}) {die "\nSpecify either a color string (-c) or a color coding file (-C), not both!\n$die2"};
+
+if (defined $opt{'R'}) {$Rscript = $opt{'R'}};
+if (defined $opt{'s'}) {$ptSize = $opt{'s'}};
+if (defined $opt{'f'}) {$alpha = $opt{'f'}};
+if (defined $opt{'A'}) {read_annot($opt{'A'})};
+if (defined $opt{'a'}) {
+	@ANNOT_LIST = split(/,/, $opt{'a'});
+	foreach $annot (@ANNOT_LIST) {
+		$ANNOT_include{$annot} = 1;
+	}
+}
+if (defined $opt{'C'}) {read_color_file($opt{'C'})};
+if (defined $opt{'c'}) {read_color_string($opt{'c'})};
+if (!defined $opt{'O'}) {$opt{'O'} = $ARGV[0]};
+$opt{'O'} =~ s/\.txt$//; $opt{'O'} =~ s/\.dims$//;
+if (defined $opt{'x'}) {$xdim = $opt{'x'}};
+if (defined $opt{'y'}) {$ydim = $opt{'y'}};
+if (!defined $opt{'G'}) {$opt{'G'} = $gradient_def};
+$gradient_function = get_gradient($opt{'G'});
+
+if (!defined $opt{'o'}) {
+	if (-e "$ARGV[0].orig.dims") {
+		$opt{'o'} = "$ARGV[0].orig.dims";
+	} else {
+		die "\n\nERROR: Cannot find $ARGV[0].orig.dims, check your prefix ($ARGV[0])\n";
+	}
+}
+if (!defined $opt{'p'}) {
+	if (-e "$ARGV[0].proj.dims") {
+		$opt{'p'} = "$ARGV[0].proj.dims";
+	} else {
+		die "\n\nERROR: Cannot find $ARGV[0].proj.dims, check your prefix ($ARGV[0])\n";
+	}
+}
+if (!defined $opt{'l'}) {
+	if (-e "$ARGV[0].centered.lambda") {
+		$opt{'l'} = "$ARGV[0].centered.lambda";
+	} elsif (-e "$ARGV[0].lambda") {
+		$opt{'l'} = "$ARGV[0].lambda";
+	} else {
+		die "\n\nERROR: Cannot find $ARGV[0].centered.lambda OR $ARGV[0].lambda, check your prefix ($ARGV[0])\n";
+	}
+}
+
+read_dims($opt{'o'});
+read_pcurve_dims($opt{'p'});
+read_values($opt{'l'});
+
+
+if (defined $opt{'M'}) {
+	print STDERR "SCITOOLS: Matrix file plotting detected! Will plot a separate value-based plot for each row entry of the matrix.\n";
+	
+	$matrix_out = "matrix_plots";
+	
+	if (-e "$opt{'O'}.$matrix_out\pcurve") {
+		die "\nFATAL: $opt{'O'}.$matrix_out\pcurve directory already exists! Exiting!\n$die2";
+	}
+	system("mkdir $opt{'O'}.$matrix_out\pcurve");
+	
+	read_matrix($opt{'M'});
+	
+	foreach $feature (keys %MATRIX_feature_nonZero) {
+		$feature_polished = $feature;
+		$feature_polished =~ s/(:|;|'|\.|\(|\)|\{|\}|\[|\]|\s|\|)/_/;
+		open VALS, ">$opt{'O'}.$matrix_out\pcurve/$feature_polished.values";
+
+		foreach $cellID (keys %CELLID_FEATURE_value) {
+			if (defined $opt{'A'}) {
+				if (defined $opt{'a'}) {
+					if (defined $CELLID_annot{$cellID}) {
+						if (defined $ANNOT_include{$CELLID_annot{$cellID}}) {
+							$annot = $CELLID_annot{$cellID}
+						} else {$annot = "Exclude"};
+					} else {$annot = "Exclude"};
+				} else {
+					if (defined $CELLID_annot{$cellID}) {
+						$annot = $CELLID_annot{$cellID};
+					} else {$annot = "Cell"};
+				}
+			} else {
+				$annot = "Cell";
+			}
+			if (defined $CELLID_FEATURE_value{$cellID}{$feature} && ($annot !~ /Exclude/i)) {
+				print VALS "$cellID\t$CELLID_value{$cellID}\t$CELLID_FEATURE_value{$cellID}{$feature}\t$annot\n";
+			}
+		} close VALS;
+		
+		open R, ">$opt{'O'}.plot.r";
+
+# lambda vals plot
+	print R "
+library(ggplot2)
+IN<-read.table(\"$opt{'O'}.$matrix_out\pcurve/$feature_polished.values\",header=FALSE)
+# Make the lambda and matrix val plot
+PointPlot<-ggplot() + ";
+
+# plot the original dims w/ respective color
+if (!defined $opt{'c'} && !defined $opt{'C'} && !defined $opt{'A'}) {
+	print R "
+	geom_point(aes(x=IN\$V2,y=IN\$V3),color=\"lightsteelblue4\",size=$ptSize,alpha=$alpha) +";
+} else {
+	print R "
+	geom_point(aes(x=IN\$V2,y=IN\$V3,color=IN\$V4),size=$ptSize,alpha=$alpha) +
+	guides(colour = guide_legend(override.aes = list(size=4))) +";
+}
+
+if ($color_mapping !~ /none/i) {
+	print R "
+	scale_colour_manual(values = c($color_mapping)) +";
+}
+
+	print R "
+geom_smooth(aes(x=IN\$V2,y=IN\$V3)) +
+theme_bw() + xlab(\"Lambda\") + ylab(\"Feature value\") +
+theme(legend.background=element_blank(),
+legend.title=element_blank(),
+panel.background=element_blank(),
+plot.background=element_blank())
+
+ggsave(plot=PointPlot,filename=\"$opt{'O'}.$matrix_out\pcurve/$feature_polished.lambda.png\",width=5,height=4,dpi=900)
+ggsave(plot=PointPlot,filename=\"$opt{'O'}.$matrix_out\pcurve/$feature_polished.lambda.plot.pdf\",width=5,height=4)
+
+a=cor(IN\$V2,IN\$V3,method =\"pearson\")
+b=cor(IN\$V2,IN\$V3,method =\"spearman\")
+output<-c(\"$feature_polished\",a)
+output2<-c(\"$feature_polished\",b)
+write(output,file=\"$opt{'O'}.$matrix_out\pcurve/corr.pearson.txt\",append=TRUE,ncolumns=2,sep = \"\\t\")
+write(output2,file=\"$opt{'O'}.$matrix_out\pcurve/corr.spearman.txt\",append=TRUE,ncolumns=2,sep = \"\\t\")
+
+";
+	close R;
+	
+		system("$Rscript $opt{'O'}.plot.r");
+		if (!defined $opt{'X'}) {system("rm -f $opt{'O'}.$matrix_out\pcurve/$feature_polished.values $opt{'O'}.plot.r")};
+	}
+	
+	
+	open R, ">$opt{'O'}.plot.r";
+	print R "
+	library(ggplot2)
+	IN<-read.table(\"$opt{'O'}.$matrix_out\pcurve/corr.pearson.txt\",header=FALSE)
+	# Make the corr distribution plot
+	
+	HISTPlot<-ggplot(IN,aes(x=V2)) + geom_histogram()+ 
+	theme_bw() + xlab(\"Correlation\") + ylab(\"Counts\") +
+	theme(legend.background=element_blank(),
+	legend.title=element_blank(),
+	panel.background=element_blank(),
+	plot.background=element_blank())
+
+	ggsave(plot=HISTPlot,filename=\"$opt{'O'}.$matrix_out\pcurve/Hist.corr.Pearson.lambda.png\",width=5,height=4,dpi=900)
+	ggsave(plot=HISTPlot,filename=\"$opt{'O'}.$matrix_out\pcurve/Hist.corr.Pearson.lambda.plot.pdf\",width=5,height=4)
+	
+		IN<-read.table(\"$opt{'O'}.$matrix_out\pcurve/corr.spearman.txt\",header=FALSE)
+	# Make the corr distribution plot
+	
+	HISTPlot<-ggplot(IN,aes(x=V2)) + geom_histogram()+ 
+	theme_bw() + xlab(\"Correlation\") + ylab(\"Counts\") +
+	theme(legend.background=element_blank(),
+	legend.title=element_blank(),
+	panel.background=element_blank(),
+	plot.background=element_blank())
+
+	ggsave(plot=HISTPlot,filename=\"$opt{'O'}.$matrix_out\pcurve/Hist.corr.Spearman.lambda.png\",width=5,height=4,dpi=900)
+	ggsave(plot=HISTPlot,filename=\"$opt{'O'}.$matrix_out\pcurve/Hist.corr.Spearman.lambda.plot.pdf\",width=5,height=4)
+	";
+	close(R);
+	system("$Rscript $opt{'O'}.plot.r");
+	if (!defined $opt{'X'}) {system("rm -f $opt{'O'}.plot.r")};
+	
+	exit;
+}
+
+
+open DATA, ">$opt{'O'}.plot.txt";
+print DATA "cellID\tannot\tlambda\todim1\todim2\tpdim1\tpdim2\n";
+foreach $cellID (keys %CELLID_DIMS) {
+
+	if (defined $opt{'A'}) {
+		if (defined $opt{'a'}) {
+			if (defined $CELLID_annot{$cellID}) {
+				if (defined $ANNOT_include{$CELLID_annot{$cellID}}) {
+					$annot = $CELLID_annot{$cellID}
+				} else {$annot = "Exclude"};
+			} else {$annot = "Exclude"};
+		} else {
+			if (defined $CELLID_annot{$cellID}) {
+				$annot = $CELLID_annot{$cellID};
+			} else {
+				$annot = "Cell";
+			}
+		}
+	} else {
+		$annot = "Cell";
+	}
+	
+	if ($annot !~ /Exclude/i) {
+		print DATA "$cellID\t$annot\t$CELLID_value{$cellID}\t$CELLID_DIMS{$cellID}[$xdim]\t$CELLID_DIMS{$cellID}[$ydim]\t$CELLID_PCURVE_DIMS{$cellID}[$xdim]\t$CELLID_PCURVE_DIMS{$cellID}[$ydim]\n";
+	}
+	
+} close DATA;
+
+open R, ">$opt{'O'}.plot.r";
+
+# DIMS PLOT
+print R "
+library(ggplot2)
+IN<-read.table(\"$opt{'O'}.plot.txt\",header=TRUE)
+
+# Make the odim and pdim plot
+PointPlot<-ggplot() +";
+
+# plot the original dims w/ respective color
+if (!defined $opt{'c'} && !defined $opt{'C'} && !defined $opt{'A'}) {
+	print R "
+	geom_point(aes(IN\$odim1,IN\$odim2),color=\"lightsteelblue4\",size=1) +";
+} else {
+	print R "
+	geom_point(aes(IN\$odim1,IN\$odim2,color=IN\$annot),size=1) +
+	guides(colour = guide_legend(override.aes = list(size=4))) +";
+}
+
+if ($color_mapping !~ /none/i) {
+	print R "
+	scale_colour_manual(values = c($color_mapping)) +";
+}
+
+# plot the projected points and color by lambda
+print R "
+	geom_point(aes(IN\$pdim1,IN\$pdim2),color=\"gray30\",size=1) +";
+
+# set theme
+if ($theme =~ /Clean/i) {
+	print R "
+	theme_bw() +
+	theme(panel.border=element_blank(),
+		  panel.grid=element_blank(),
+		  axis.line=element_blank(),
+		  axis.ticks=element_blank(),
+		  legend.background=element_blank(),
+		  legend.title=element_blank(),
+		  panel.background=element_blank(),
+		  axis.text=element_blank(),
+		  axis.title.x=element_blank(),
+		  axis.title.y=element_blank(),
+		  plot.background=element_blank())\n";
+} else {
+	print R "
+	theme_bw()\n";
+}
+
+# plot them
+print R "
+ggsave(plot=PointPlot,filename=\"$opt{'O'}.plot.png\",width=5,height=4,dpi=900)
+ggsave(plot=PointPlot,filename=\"$opt{'O'}.plot.pdf\",width=5,height=4)";
+
+# DIMS PLOT - "CENTIPEDE"
+print R "
+# Make the odim and pdim \"centipede\" style plot
+$gradient_function
+CentPlot<-ggplot() +";
+
+# plot the original dims w/ respective color
+print R "geom_segment(aes(x=IN\$odim1,xend=IN\$pdim1,y=IN\$odim2,yend=IN\$pdim2),size=0.2,color=\"lightsteelblue4\") +
+	geom_point(aes(IN\$odim1,IN\$odim2),color=\"lightsteelblue4\",size=0.5) +
+	geom_point(aes(IN\$pdim1,IN\$pdim2,color=IN\$lambda),size=0.75) +
+	scale_color_gradientn(colours=gradient_funct(15)) +
+	labs(color=\"Lambda\") +";
+
+# set theme
+if ($theme =~ /Clean/i) {
+	print R "
+	theme_bw() +
+	theme(panel.border=element_blank(),
+		  panel.grid=element_blank(),
+		  axis.line=element_blank(),
+		  axis.ticks=element_blank(),
+		  legend.background=element_blank(),
+		  panel.background=element_blank(),
+		  axis.text=element_blank(),
+		  axis.title.x=element_blank(),
+		  axis.title.y=element_blank(),
+		  plot.background=element_blank())\n";
+} else {
+	print R "
+	theme_bw()\n";
+}
+
+# plot them
+print R "
+ggsave(plot=CentPlot,filename=\"$opt{'O'}.vector_plot.png\",width=5,height=4,dpi=900)
+ggsave(plot=CentPlot,filename=\"$opt{'O'}.vector_plot.pdf\",width=5,height=4)";
+
+# DENSITY LAMBDA PLOT
+print R "
+# Plot the density over lambda
+
+DensityPlot<-ggplot() +";
+if (!defined $opt{'c'} && !defined $opt{'C'} && !defined $opt{'A'}) {
+	print R "
+	geom_density(aes(IN\$lambda),color=\"lightsteelblue4\",size=1) +";
+} else {
+	print R "
+	geom_density(aes(IN\$lambda,color=IN\$annot),size=1) +
+	guides(colour = guide_legend(override.aes = list(size=4))) +";
+}
+if ($color_mapping !~ /none/i) {
+	print R "
+	scale_colour_manual(values = c($color_mapping)) +";
+}
+print R "
+	theme_bw() + xlab(\"Lambda\") +	ylab(\"Density\") + theme(legend.background=element_blank(),legend.title=element_blank())";
+print R "
+ggsave(plot=DensityPlot,filename=\"$opt{'O'}.lambda.png\",width=5,height=3,dpi=900)
+ggsave(plot=DensityPlot,filename=\"$opt{'O'}.lambda.pdf\",width=5,height=3)";
+
+# VIOLIN LAMBDA PLOT
+if (defined $opt{'A'}) {
+print R "
+# Horizontal violin plot over lambda
+
+Violin<-ggplot() + theme_bw() +
+	geom_violin(aes(IN\$annot,IN\$lambda,fill=IN\$annot),alpha=0.5,color=\"gray30\",size=0.5) +
+	geom_jitter(aes(IN\$annot,IN\$lambda),color=\"gray30\",size=0.15) +";
+if ($color_mapping !~ /none/i) {
+	print R "
+	scale_fill_manual(values = c($color_mapping)) +";
+}
+print R "
+	scale_x_discrete(limits = rev(levels(IN\$V2))) +
+	guides(fill=FALSE,colour=FALSE) +
+	xlab(\"Annot\") +
+	ylab(\"Lambda\") +
+	coord_flip()
+ggsave(plot=Violin,filename=\"$opt{'O'}.violin.png\",width=7,height=3,dpi=900)
+ggsave(plot=Violin,filename=\"$opt{'O'}.violin.pdf\",width=7,height=3)";
+}
+
+close R;
+
+system("$Rscript $opt{'O'}.plot.r");
+
+if (!defined $opt{'X'}) {
+	system("rm -f $opt{'O'}.plot.r $opt{'O'}.plot.txt");
+}
+
+exit;
+}
+
 if ($command eq "plot-reads") {
 
 # Defaults
@@ -3774,7 +4731,7 @@ $flanking_size = 100000;
 $gene_scale_factor = 1;
 $gene_text_size = 1.5;
 
-getopts("O:A:a:C:c:R:Xs:Dh:w:rp:B:G:S:f:t:", \%opt);
+getopts("O:A:a:C:c:R:Xs:Dh:w:rp:B:G:S:f:t:V:v:", \%opt);
 
 $die2 = "
 scitools plot-reads [options] [rmdup sci bam file] [chrN:start-end] [region 2] ...
@@ -3783,13 +4740,13 @@ Options:
    -O   [STR]   Output prefix (default is input prefix)
    -D           Output to a directory (will add to it if it exists)
    -B   [BED]   Bed file of peaks (optional)
-   -G   [BED]   Gene info (refGene.txt formats)
-                Defaults: hg38, hg19, mm10 (see scitools -h for more details)
+   -G   {STR]   Gene info (refGene.txt formats)
+                Shortcut eg: hg38, hg19, mm10 (see scitools -h for more details)
    -S   [INT]   Flanking size if gene names are specified
                 (reuires -G, def = $flanking_size)
    -A   [STR]   Annotation file (to color code reads)
-   -a   [STR]   Comma separated list of annoations to include in plot
-                  (requires -A to be specified)
+   -a   [STR]   Comma separated list of annotations to include in plot
+                  (requires -A, will plot annots in the specified order)
    -C   [STR]   Color coding file (annot (tab) #hexColor)
    -c   [STR]   Color coding string
                   Annot=#hexColor,Annot2=#hexColor
@@ -3799,7 +4756,10 @@ Options:
    -f   [FLT]   Gene plot spacing factor (def = $gene_scale_factor)
                   (for -G, larger values = more vertical spread)
    -t   [FLT]   Gene name text size (def = $gene_text_size)
-   -r           Do not randomize cell order (def = randomize)
+   -r           Order cells by start of first read (def = randomize)
+   -V   [STR]   Values or lambda file for cell ordering
+                  (overrides -r, only cells in file will plot)
+   -v           Reverse order of the provided values/lambda file
    -R   [STR]   Rscript call (def = $Rscript)
    -s   [STR]   Samtools call (def = $samtools)
    -X           Do not delete intermediate files (def = delete)
@@ -3838,12 +4798,10 @@ if (!defined $opt{'O'}) {$opt{'O'} = $ARGV[0]};
 $opt{'O'} =~ s/\.bam$//;
 
 if (defined $opt{'G'}) {
-	if ($opt{'G'} eq "hg38") {
-		$opt{'G'} = $hg38_ref; $opt{'G'} =~ s/\.fa$/\.refGene.txt/;
-	} elsif ($opt{'G'} eq "hg19") {
-		$opt{'G'} = $hg19_ref; $opt{'G'} =~ s/\.fa$/\.refGene.txt/;
-	} elsif ($opt{'G'} eq "mm10") {
-		$opt{'G'} = $mm10_ref; $opt{'G'} =~ s/\.fa$/\.refGene.txt/;
+	if (defined $REF{$opt{'G'}}) {
+		$ref_file = $REF{$opt{'G'}};
+		$opt{'G'} = $ref_file;
+		$opt{'G'} =~ s/\.fa$/\.refGene.txt/;
 	}
 	read_refgene($opt{'G'});
 }
@@ -3930,19 +4888,54 @@ while ($l = <IN>) {
 
 if ($reads_in_region>0) {
 
+# order annot if -a specified, otherwise order however
+@ANNOT_ORDER = ();
+if (!defined $opt{'a'}) {
+	foreach $annot (sort keys %ANNOT_ids) {
+		push @ANNOT_ORDER, $annot;
+	}
+} else {
+	for ($i = 0; $i < @ANNOT_LIST; $i++) {
+		if (defined $ANNOT_ids{$ANNOT_LIST[$i]}) {
+			push @ANNOT_ORDER, $annot;
+		}
+	}
+}
+
+# DO reordering stuff here
 $newID = 0;
-foreach $annot (keys %ANNOT_ids) {
-	if (!defined $opt{'r'}) {
-		foreach $cellID (sort {$ID_randVal{$a}<=>$ID_randVal{$b}} keys %ID_randVal) {
-			if ($CELLID_annot{$cellID} eq $annot) {
-				$ANNOT_CELLID_newID{$annot}{$CELLID_id{$cellID}} = $newID;
+if (!defined $opt{'V'}) {
+	for ($i = 0; $i < @ANNOT_ORDER; $i++) {
+		$annot = $ANNOT_ORDER[$i];
+		if (!defined $opt{'r'}) {
+			foreach $cellID (sort {$ID_randVal{$a}<=>$ID_randVal{$b}} keys %ID_randVal) {
+				if ($CELLID_annot{$cellID} eq $annot) {
+					$ANNOT_CELLID_newID{$annot}{$CELLID_id{$cellID}} = $newID;
+					$newID++;
+				}
+			}
+		} else {
+			foreach $cellID (sort {$CELLID_id{$a}<=>$CELLID_id{$b}} keys %CELLID_id) {
+				if ($CELLID_annot{$cellID} eq $annot) {
+					$ANNOT_CELLID_newID{$annot}{$CELLID_id{$cellID}} = $newID;
+					$newID++;
+				}
+			}
+		}
+	}
+} else {
+	read_values($opt{'V'});
+	if (!defined $opt{'v'}) {
+		foreach $cellID (sort {$CELLID_value{$a}<=>$CELLID_value{$b}} keys %CELLID_value) {
+			if (defined $CELLID_id{$cellID} && defined $CELLID_annot{$cellID}) {
+				$ANNOT_CELLID_newID{$CELLID_annot{$cellID}}{$CELLID_id{$cellID}} = $newID;
 				$newID++;
 			}
 		}
 	} else {
-		foreach $cellID (sort {$CELLID_id{$a}<=>$CELLID_id{$b}} keys %CELLID_id) {
-			if ($CELLID_annot{$cellID} eq $annot) {
-				$ANNOT_CELLID_newID{$annot}{$CELLID_id{$cellID}} = $newID;
+		foreach $cellID (sort {$CELLID_value{$b}<=>$CELLID_value{$a}} keys %CELLID_value) {
+			if (defined $CELLID_id{$cellID} && defined $CELLID_annot{$cellID}) {
+				$ANNOT_CELLID_newID{$CELLID_annot{$cellID}}{$CELLID_id{$cellID}} = $newID;
 				$newID++;
 			}
 		}
@@ -3954,8 +4947,10 @@ open OUT, ">$opt{'O'}$region_name.data.full";
 while ($l = <IN>) {
 	chomp $l;
 	($annot,$id,$posn) = split(/\t/, $l);
-	$newID = $ANNOT_CELLID_newID{$annot}{$id};
-	print OUT "READ\t$annot\t$newID\t$posn\n";
+	if (defined $ANNOT_CELLID_newID{$annot}{$id}) {
+		$newID = $ANNOT_CELLID_newID{$annot}{$id};
+		print OUT "READ\t$annot\t$newID\t$posn\n";
+	}
 } close IN;
 
 if (defined $opt{'B'}) {
@@ -4119,6 +5114,119 @@ if (!defined $opt{'X'}) {
 
 exit;
 }
+
+if ($command eq "plot-signal" || $command eq "signal-plot") {
+
+# Defaults
+$gradient_def = "WtPu";
+$min = 0;
+$max = 5;
+$width_spec = "each=1";
+$height=6;
+
+getopts("O:r:G:R:Xh:w:", \%opt);
+
+$die2 = "
+scitools plot-signal [options] [(zscored) signal file]
+   or    signal-plot
+
+Options:
+   -O   [STR]   Output prefix (default is signal file prefix)
+   -r   [m,M]   Range: Min,Max values to impose for plotting (def = $min,$max)
+   -G   [GRD]   Color gradient (def = $gradient_def)
+                  For all available gradients, run 'scitools gradient'
+   -h   [INS]   Height of plot (inches, def = $height)
+   -w   [STR]   Width of plot (in, each=[for each annot] or all=[total width]
+                  if a single number will assume total width def = $width_spec)
+   -R   [STR]   Rscript call (def = $Rscript)
+   -X           Do not delete intermediate files (def = delete)
+
+Note: Requires ggplot2 R package
+
+";
+
+if (!defined $ARGV[0]) {die $die2};
+if (!defined $opt{'O'}) {$opt{'O'} = $ARGV[0]};
+if (!defined $opt{'G'}) {$opt{'G'} = $gradient_def};
+$gradient_function = get_gradient($opt{'G'});
+if (defined $opt{'r'}) {($min,$max) = split(/,/, $opt{'r'})};
+if (defined $opt{'h'}) {$height = $opt{'h'}};
+if (defined $opt{'w'}) {$width_spec = $opt{'w'}};
+if ($width_spec =~ /=/) {
+	($width_type,$width_value) = split(/=/, $width_spec);
+} else {
+	$width_type = "all"; $width_value = $width_spec;
+}
+
+open IN, "$ARGV[0]";
+open OUT, ">$opt{'O'}.plot";
+$h = <IN>; chomp $h; @H = split(/\t/, $h);
+$win_pos = 0;
+while ($l = <IN>) {
+	chomp $l;
+	@P = split(/\t/, $l);
+	$winID = shift(@P);
+	for ($i = 0; $i < @P; $i++) {
+		if ($P[$i] < $min) {$P[$i] = $min};
+		if ($P[$i] > $max) {$P[$i] = $max};
+		print OUT "$win_pos\t$i\t$P[$i]\n";
+	}
+	$win_pos++;
+} close OUT;
+
+# determine plot width
+%ANNOT_list = (); $annot_count = 0;
+for ($i = 0; $i < @H; $i++) {
+	($annot,$subWin) = split(/_window_/, $H[$i]);
+	if (!defined $ANNOT_list{$annot}) {
+		$ANNOT_list{$annot} = 1;
+		$annot_count++;
+	}
+}
+if ($width_type =~ /all/i) {
+	$width = $width_value;
+} elsif ($annot_count <= 1) {
+	$width = $width_value+0.5;
+} else {
+	$width = ($width_value*$annot_count)+0.5;
+}
+
+open R, ">$opt{'O'}.plot.r";
+print R "
+library(ggplot2)
+$gradient_function
+IN<-read.table(\"$opt{'O'}.plot\")
+colnames(IN)<-c(\"row\",\"col\",\"val\")
+PLT<-ggplot() + theme_bw() +
+	geom_tile(aes(IN\$col,IN\$row,fill=IN\$val)) +
+	theme(axis.title.x=element_blank(),
+		axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),
+		axis.title.y=element_blank(),
+		axis.text.y=element_blank(),
+        axis.ticks.y=element_blank(),
+		panel.grid.major=element_blank(),
+		panel.grid.minor=element_blank(),
+		axis.line=element_blank(),
+		panel.background=element_blank()) +
+	labs(fill=\"Signal\") +
+	scale_y_reverse(expand=c(0,0)) +
+	scale_x_continuous(expand=c(0,0)) +
+	scale_fill_gradientn(colours=gradient_funct(99))
+ggsave(plot=PLT,filename=\"$opt{'O'}.plot.png\",width=$width,height=$height,dpi=900)
+ggsave(plot=PLT,filename=\"$opt{'O'}.plot.pdf\",width=$width,height=$height)
+";
+close R;
+
+system("$Rscript $opt{'O'}.plot.r");
+
+if (!defined $opt{'X'}) {
+	system("rm -f $opt{'O'}.plot.r $opt{'O'}.plot");
+}
+
+exit;
+}
+
 
 ########## DATA ARCHIVE FUNCTIONS ##########
 if ($command eq "combine-data" || $command eq "data-combine") { # TODO (low priority): Add in hdf5 version
@@ -4507,6 +5615,48 @@ exit;
 #################### SUBROUTINES ####################
 #####################################################
 
+sub load_defaults {
+	# Some global ones that are not configured
+	$color_mapping = "none";
+	$ref_shortcuts = "";
+	if (-e "$_[0]") {
+		open DEF, "$_[0]";
+		while ($def = <DEF>) {
+			if ($def !~ /^#/) {
+				chomp $def;
+				($var,$val) = split(/=/, $def);
+				if ($var =~ /_ref$/) {
+					$refID = $var; $refID =~ s/_ref$//;
+					$REF{$refID} = $val;
+					$ref_shortcuts .= "\t$refID = $val\n";
+				} else {
+					if ($var eq "gzip") {$gzip = $var}
+					elsif ($var eq "zcat") {$zcat = $var}
+					elsif ($var eq "bwa") {$bwa = $var}
+					elsif ($var eq "samtools") {$samtools = $var}
+					elsif ($var eq "scitools") {$scitools = $var}
+					elsif ($var eq "macs2") {$macs2 = $var}
+					elsif ($var eq "bedtools") {$bedtools = $var}
+					elsif ($var eq "Rscript") {$Rscript = $var}
+					elsif ($var eq "Pscript") {$Pscript = $var}
+					else {$VAR{$var} = $val};
+				}
+			}
+		} close DEF;
+	} else {
+		# No config file = load default executables for convenience
+		$gzip = "gzip"; #DEFAULT=gzip
+		$zcat = "zcat"; #DEFAULT=zcat
+		$bwa = "bwa"; #DEFAULT=bwa
+		$samtools = "samtools"; #DEFAULT=samtools
+		$scitools = "scitools"; #DEFAULT=scitools
+		$macs2 = "macs2"; #DEFAULT=macs2
+		$bedtools = "bedtools"; #DEFAULT=bedtools
+		$Rscript = "Rscript"; #DEFAULT=Rscript
+		$Pscript = "python"; #DEFAULT=Pscript
+	}
+}
+
 sub read_annot {
 	%CELLID_annot = (); %ANNOT_count = (); $annot_count = 0;
 	@ANNOT_FILES = split(/,/, $_[0]);
@@ -4759,8 +5909,11 @@ the arguments then just the operation name can be specified.
 
 Dependencies: (command-line callable, can be specified in options)
 Run scitools dependencies to check software and R requirements.
-The default executables can be altered at the start of the scitools
-code in the # GLOBAL DEFAULTS section.
+
+Config file for defaults: scitools has a number of set defaults
+that can be conveniently specified in a scitools.cfg file. There
+is a hardcoded config file location, but the best way for personalized
+defaults, include a '.scitools.cfg' file in your home directory.
 
 Executables:
    gzip         For gzipped fastq files. Default: $gzip & $zcat
@@ -4779,20 +5932,21 @@ R packages:
    Rtsne           For tSNE visualization
    methods         For PCA
    dbscan          For density-based clustering
+   princurve       Principle curve projections
+   chromVAR        For chromVAR only
+   chromVARmotifs  For chromVAR only
+   cicero          For cicero only
 
 Some default locations / shortcuts:
    Fastq directory (where bcl2fastq outputs fastq files)
-      $fastq_input_directory
+      $VAR{'fastq_input_directory'}
    Output fastq directory (for processed SCI fastq files)
-      $SCI_fastq_directory
+      $VAR{'SCI_fastq_directory'}
    SCI index file (should comtain all barcodes in the proper format)
-      $SCI_index_file
-   hg19 ([reference.fa], [reference.fa].fai, [reference.fa].[bwa_index], and [reference].refGene.txt)
-      $hg19_ref
-   hg38 ([reference.fa], [reference.fa].fai, [reference.fa].[bwa_index], and [reference].refGene.txt)
-      $hg38_ref
-   mm10 ([reference.fa], [reference.fa].fai, [reference.fa].[bwa_index], and [reference].refGene.txt)
-      $mm10_ref
+      $VAR{'SCI_index_file'}
+
+   Default Refs / shortcuts ([reference.fa], [reference.fa].fai, [reference.fa].[bwa_index], and [reference].refGene.txt)
+$ref_shortcuts
 
 File Types used by scitools:
 
@@ -4830,7 +5984,7 @@ Typical scitools analysis for sci-ATAC-seq:
    2) Demultiplex and reformat raw fastq files:
       scitools fastq-dump -A [mySamples.annot] -R [RUN_NAME, must be in fastq directory]
 
-   3) Align fastq files (if reference defaults are set up use hg38, hg19, or mm10)
+   3) Align fastq files (if reference defaults are set up use the reference shortcut)
       scitools align -t [n threads] [reference_prefix or shortcut] [reads.sampleA.1.fq.gz] [reads.sampleA.2.fq.gz] [sampleA_prefix]
 
    4) Remove duplicates and create complexity file:
