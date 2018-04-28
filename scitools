@@ -12,7 +12,7 @@ $version = "0.1.1";
 use Getopt::Std; %opt = ();
 
 # LOAD DEFAULTS
-$SCITOOLS_DEFAULTS = "/home/groups/oroaklab/src/scitools/scitools-dev/scitools.cfg"; # DEFAULT CONFIG
+$SCITOOLS_DEFAULTS = "null"; # DEFAULT CONFIG
 if (-e "$ENV{'HOME'}/.scitools.cfg") {
 	$SCITOOLS_DEFAULTS = "$ENV{'HOME'}/.scitools.cfg";
 } elsif (-e "$ENV{'HOME'}/scitools.cfg") {
