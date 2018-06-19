@@ -1,4 +1,4 @@
-scitools Version: 0.1.1
+scitools Version: 0.1.2
 Adey Lab (www.adeylab.org, www.github.com/adeylab/scitools)
 
 scitools is a set of scripts designed for working with single-cell
@@ -35,7 +35,7 @@ R packages:
    methods         For PCA
    dbscan          For density-based clustering
 
-Some default locations / shortcuts:
+Some default locations / shortcuts - specify in scitools.cfg
    Fastq directory (where bcl2fastq outputs fastq files)
       fastq_input_directory
    Output fastq directory (for processed SCI fastq files)
