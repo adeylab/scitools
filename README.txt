@@ -1,6 +1,9 @@
 scitools Version: 0.1.3
 Adey Lab (www.adeylab.org, www.github.com/adeylab/scitools)
 
+WARNING: scitools is still in a development stage - a number of
+commands may still be unstable.
+
 scitools is a set of scripts designed for working with single-cell
 combinatorial indexing data. It includes tools to go from fastq files
 off of the sequencer (after bcl2fastq) to a processed dataset. It
