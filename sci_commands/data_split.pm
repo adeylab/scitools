@@ -86,6 +86,10 @@ while ($l = <IN>) {
 				print OUT "\t$CELLIDS[$i]";
 			} print OUT "\n";
 			$out_type = "matrix";
+		} elsif ($P[0] eq "#OTHER_DATA") {
+			($null,$type) = split(/=/,$P[3]);
+			open OUT, ">$opt{'O'}.$name.$type";
+			$out_type = "other";
 		}
 	} else {
 		if ($out_type eq "dims") {
@@ -94,7 +98,7 @@ while ($l = <IN>) {
 			for ($i = 2; $i < @P; $i++) {
 				$CELLID_DIMS{$CELLIDS[$i]}{$dim} = $P[$i];
 			}
-		} elsif ($out_type eq "matrix") {
+		} elsif ($out_type eq "matrix" || $out_type eq "other") {
 			print OUT "$P[1]";
 			for ($i = 2; $i < @P; $i++) {
 				print OUT "\t$P[$i]";

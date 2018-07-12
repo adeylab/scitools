@@ -9,12 +9,6 @@ sub met_probesummary {
 
 @ARGV = @_;
 
-$bedtools = "bedtools"; #DEFAULT=bedtools
-$Rscript = "Rscript"; #DEFAULT=Rscript
-$zcat = "zcat"; #DEFAULT=zcat
-$gzip = "gzip"; #DEFAULT=gzip
-
-
 use Getopt::Std; %opt = ();
 getopts("B:R:F:O:", \%opt);
 $die2 = "

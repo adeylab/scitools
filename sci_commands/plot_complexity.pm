@@ -8,7 +8,11 @@ use Exporter "import";
 sub plot_complexity {
 
 @ARGV = @_;
-getopts("O:A:a:C:c:R:M", \%opt);
+getopts("O:A:a:C:c:R:Mf:p:k:", \%opt);
+
+#defaults
+$alpha = 0.3;
+$ptSize = 1;
 
 $die2 = "
 scitools plot-complexity [options] [complexity file(s) can be comma separated]
@@ -18,10 +22,14 @@ Options:
    -M           Run mixed model to determine read count cutoff for cells (def = no)
    -A   [STR]   Annotation file (to color code points)
    -a   [STR]   Comma separated list of annoations to include in plot
-                (requires -A to be specified)
+                 (requires -A to be specified)
    -C   [STR]   Color coding file (annot (tab) #hexColor)
    -c   [STR]   Color coding string
-                Annot=#hexColor,Annot2=#hexColor
+                 Annot=#hexColor,Annot2=#hexColor
+   -p   [FLT]   Point size (def = $ptSize)
+   -f   [FLT]   Alpha for plotting points (def = $alpha)
+   -k   [STR]   If defined will color density lines the specified color (def = same as points)
+                 either #hexcolor, or colorName
    -R   [STR]   Rscript call (def = $Rscript)
 
 Note: Requires ggplot2 R package
@@ -41,6 +49,13 @@ if (defined $opt{'a'}) {
 }
 if (defined $opt{'C'}) {read_color_file($opt{'C'})};
 if (defined $opt{'c'}) {read_color_string($opt{'c'})};
+if (defined $opt{'p'}) {$ptSize = $opt{'p'}};
+if (defined $opt{'f'}) {$alpha = $opt{'f'}};
+if (defined $opt{'k'}) {
+	if ($opt{'k'} =~ /^#/) {$cont_col = $opt{'k'}}
+	else {$cont_col = "\"$opt{'k'}\""};
+}
+
 if (!defined $opt{'O'}) {$opt{'O'} = $ARGV[0]};
 $opt{'O'} =~ s/\.txt$//;
 
@@ -65,9 +80,15 @@ print R "
 library(ggplot2)
 IN<-read.table(\"$opt{'O'}.plot.txt\")
 PLT<-ggplot(data=subset(IN,V4<100&V4>0)) + theme_bw() +
-   geom_point(aes(V4,log10(V3),color=V2),size=1,alpha=0.3) +
-   geom_density2d(aes(V4,log10(V3),color=V2),size=0.3) +
+   geom_point(aes(V4,log10(V3),color=V2),size=$ptSize,alpha=$alpha,shape=16) +
 ";
+if (defined $opt{'k'}) {
+print R "   geom_density2d(aes(V4,log10(V3),color=$cont_col),size=0.3) +
+";
+} else {
+print R "   geom_density2d(aes(V4,log10(V3),color=V2),size=0.3) +
+";
+}
 if (defined $opt{'C'} || defined $opt{'c'}) {
 	print R "   scale_colour_manual(values = c($color_mapping)) +
 	guides(colour = guide_legend(override.aes = list(size=4))) +";

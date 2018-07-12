@@ -1,4 +1,4 @@
-scitools Version: 0.1.2
+scitools Version: 0.1.3
 Adey Lab (www.adeylab.org, www.github.com/adeylab/scitools)
 
 scitools is a set of scripts designed for working with single-cell
@@ -14,8 +14,10 @@ the arguments then just the operation name can be specified.
 
 Dependencies: (command-line callable, can be specified in options)
 Run scitools dependencies to check software and R requirements.
-The default executables can be altered at the start of the scitools
-code in the # GLOBAL DEFAULTS section.
+The default executables can be altered in the scitools.cfg file.
+A user may also have their own personal scitools.cfg file in their
+home directory to override the use of the config file that is present
+with the scitools executable.
 
 Executables:
    gzip         For gzipped fastq files. Default: gzip & zcat
@@ -27,6 +29,8 @@ Executables:
    bwa          For alignment only. Default: bwa
    macs2        For atac-callpeak only. Default: macs2
    scitools     Can call itself. Default: scitools
+   (bismark)    For sci-MET
+   (bowtie2)    For sci-MET / used by bismark
 
 R packages:
    ggplot2         For plotting commands
@@ -34,20 +38,7 @@ R packages:
    Rtsne           For tSNE visualization
    methods         For PCA
    dbscan          For density-based clustering
-
-Some default locations / shortcuts - specify in scitools.cfg
-   Fastq directory (where bcl2fastq outputs fastq files)
-      fastq_input_directory
-   Output fastq directory (for processed SCI fastq files)
-      SCI_fastq_directory
-   SCI index file (should comtain all barcodes in the proper format)
-      SCI_index_file
-   hg19 ([reference.fa], [reference.fa].fai, [reference.fa].[bwa_index], and [reference].refGene.txt)
-      hg19_ref
-   hg38 ([reference.fa], [reference.fa].fai, [reference.fa].[bwa_index], and [reference].refGene.txt)
-      hg38_ref
-   mm10 ([reference.fa], [reference.fa].fai, [reference.fa].[bwa_index], and [reference].refGene.txt)
-      mm10_ref
+   irlba           For fast SVD
 
 File Types used by scitools:
 

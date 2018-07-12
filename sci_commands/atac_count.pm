@@ -92,7 +92,7 @@ open IN, "$bedtools intersect -abam $ARGV[0] -b $ARGV[1] -bed -wa -wb |";
 while ($l = <IN>) {
 	chomp $l;
 	@P = split(/\t/, $l);
-	($cellID,$null) = split(/:/, $P[3]);
+	$cellID = $P[3]; $cellID =~ s/:.+$//;
 	$siteID = $P[12]."_".$P[13]."_".$P[14];
 	if (!defined $SITE_CELL_STATUS{$siteID}{$cellID}) {
 		$SITE_CELL_STATUS{$siteID}{$cellID} = 1;

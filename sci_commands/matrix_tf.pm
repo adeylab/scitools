@@ -39,7 +39,7 @@ while ($l = <IN>) {
 	print OUT "$rowID";
 	for ($i = 0; $i < @P; $i++) {
 		$tf = ($P[$i]/$MATRIX_CellID_signal{$MATRIX_COLNAMES[$i]});
-		$score = $tf*$opt{'N'};
+		$score = sprintf("%.6f", $tf*$opt{'N'});
 		print OUT "\t$score";
 	}
 	print OUT "\n";

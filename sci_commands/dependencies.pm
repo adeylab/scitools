@@ -8,7 +8,7 @@ use Exporter "import";
 sub dependencies {
 
 @ARGV = @_;
-getopts("R:F:O:o:I:1:2:A:B:P:", \%opt);
+getopts("R:F:O:o:I:1:2:A:B:P:W:K:", \%opt);
 
 $die2 = "
 scitools dependencies [options] [report output file]
@@ -29,6 +29,8 @@ Options:
    -S   [STR]   Scitools call (def = $scitools)
                 (for self-calling)
    -P   [STR]   Python call (def = $Pscript)
+   -W   [STR]   Bowtie2 call (def = $bowtie2)
+   -K   [STR]   Bismark call (def = $bismark)
 
 Hardcoded:      Gzip (def = $gzip)
                 Zcat (def = $zcat)
@@ -43,6 +45,8 @@ if (defined $opt{'m'}) {$macs2 = $opt{'m'}};
 if (defined $opt{'R'}) {$Rscript = $opt{'R'}};
 if (defined $opt{'S'}) {$scitools = $opt{'S'}};
 if (defined $opt{'P'}) {$Pscript = $opt{'P'}};
+if (defined $opt{'W'}) {$bowtie2 = $opt{'W'}};
+if (defined $opt{'K'}) {$bismark = $opt{'K'}};
 
 $executable_warnings = 0;
 $R_package_warnings = 0;
@@ -53,7 +57,7 @@ print OUT "$ts scitools dependencies check.
 
 Checking command-line executables:\n";
 
-@DEPENDENCIES = ($samtools,$bedtools,$bwa,$macs2,$Rscript,$scitools,$gzip,$zcat,$Pscript);
+@DEPENDENCIES = ($samtools,$bedtools,$bwa,$macs2,$Rscript,$scitools,$gzip,$zcat,$Pscript,$bowtie2,$bismark);
 foreach $dependency (@DEPENDENCIES) {
 	$path = "";
 	open WHICH, "which $dependency 2>/dev/null |";
@@ -68,7 +72,7 @@ foreach $dependency (@DEPENDENCIES) {
 
 print OUT "\nChecking R packages:\n"; close OUT;
 
-@R_PACKAGES = ("ggplot2","svd","Rtsne","methods","dbscan","chromVAR","chromVARmotifs","cicero","princurve");
+@R_PACKAGES = ("ggplot2","svd","Rtsne","methods","dbscan","irlba","princurve");
 open R, ">$ARGV[0].r";
 foreach $package (@R_PACKAGES) {
 	print R "if (!require($package)) {print(\"  R: WARNING: $package cannot be loaded! Some scitools functions will not be useable unless it is installed.\",quote=FALSE)} else {print(\"  $package found and loadable!\",quote=FALSE)}\n";

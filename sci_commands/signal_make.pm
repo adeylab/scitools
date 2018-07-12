@@ -15,7 +15,7 @@ $sub_size = 500;
 $slide_size = 250;
 $matching_annot = "TRUE";
 
-getopts("O:A:a:W:w:l:b:s:Xn:r", \%opt);
+getopts("O:A:a:W:w:l:b:s:Xn:rv", \%opt);
 
 $die2 = "
 scitools signal-make [options] [bam file] [bed file of features]
@@ -45,6 +45,7 @@ Options:
    -l   [INT]   Sub-window slide size (def = $slide_size)
    -b   [STR]   Bedtools call (def = $bedtools)
    -s   [STR]   Samtools call (def = $samtools)
+   -v           Verbose
    -X           Do not delete intermediate files (def = delete)
 
 ";
@@ -76,22 +77,37 @@ WARNING: No annotation specified - will treat as a single annotation.\n";
 	while ($l = <IN>) {
 		chomp $l;
 		@P = split(/\t/, $l);
-		($cellID,$other) = split(/:/, $P[0]);
+		$cellID = $P[0]; $cellID =~ s/:.+$//;
 		if (defined $CELLID_annot{$cellID}) {
 			$ANNOT_read_count{$CELLID_annot{$cellID}}++;
 		}
 	} close IN;
 }
 
+if (defined $opt{'v'}) {
+	foreach $annot (keys %ANNOT_read_count) {
+		print STDERR "INFO: Annot = $annot, total reads = $ANNOT_read_count{$annot}\n";
+	}
+}
+
 if (defined $opt{'a'}) {
 	@ANNOT_LIST = split(/,/, $opt{'a'});
 	foreach $annot (@ANNOT_LIST) {
+		if (!defined $ANNOT_read_count{$annot}) {
+			die "ERROR: Annotation specified in -a ($annot) was not found in the annotaiton file $opt{'A'}\n";
+		}
 		$ANNOT_include{$annot} = 1;
 	}
 } else {
 	foreach $annot (sort keys %ANNOT_read_count) {
 		$ANNOT_include{$annot} = 1;
 		push @ANNOT_LIST, $annot;
+	}
+}
+
+if (defined $opt{'v'}) {
+	for ($annot_pos = 0; $annot_pos < @ANNOT_LIST; $annot_pos++) {
+		print STDERR "INFO: Annot pos = $annot_pos, Annot = $ANNOT_LIST[$annot_pos], Annot ct = $ANNOT_read_count{$ANNOT_LIST[$annot_pos]}\n";
 	}
 }
 
@@ -131,6 +147,10 @@ while ($l = <IN>) {
 	$featureCT++;
 } close IN; close OUT;
 
+if (defined $opt{'v'}) {
+	print STDERR "INFO: Total windows: $totwin, Features = $featureCT\n";
+}
+
 # intitalize counts
 foreach $winID (keys %WINID_list) {
 	for ($i = 0; $i <= $totwin; $i++) {
@@ -145,7 +165,7 @@ open IN, "$bedtools intersect -abam $ARGV[0] -b $opt{'O'}.signal.subwin.bed -bed
 while ($l = <IN>) {
 	chomp $l;
 	@P = split(/\t/, $l);
-	($cellID,$other) = split(/:/, $P[3]);
+	$cellID = $P[3]; $cellID =~ s/:.+$//;
 	if (defined $CELLID_annot{$cellID}) {
 		$annot = $CELLID_annot{$cellID};
 		$winID = $P[15];
@@ -153,8 +173,13 @@ while ($l = <IN>) {
 		$subID = "$annot\_window_$subWin";
 		$SUBID_annot{$subID} = $annot;
 		$WINID_SUB_ANNOT_count{$winID}{$subID}++;
+		$passing_intersections++;
 	}
 } close IN;
+
+if (defined $opt{'v'}) {
+	print STDERR "INFO: Passing Intersections of windows and bam: $passing_intersections\n";
+}
 
 # print the signal matrix
 open OUT, ">$opt{'O'}.raw.signal";
@@ -218,6 +243,9 @@ if (defined $opt{'r'}) {
 	}
 }
 
+if (defined $opt{'v'}) {
+	print STDERR "INFO: Total rows that have been ordered is: ".@ROW_ORDER."\n";
+}
 
 # print raw and norm
 for ($row_pos = 0; $row_pos < @ROW_ORDER; $row_pos++) {

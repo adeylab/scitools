@@ -53,7 +53,7 @@ if (defined $opt{'R'} && defined $opt{'A'}) {die "ERROR: Both -R and -A cannot b
 
 %ORIGINAL_newID = ();
 if (defined $opt{'R'}) {
-	print STDERR "\nUsing existing renaming annotaiton file: $opt{'R'}\n";
+	print STDERR "\nUsing existing renaming annotation file: $opt{'R'}\n";
 	read_annot($opt{'R'});
 	foreach $cellID (keys %CELLID_annot) {
 		$ORIGINAL_newID{$cellID} = $CELLID_annot{$cellID};
@@ -104,12 +104,14 @@ for ($in_file = 0; $in_file < @ARGV; $in_file++) {
 			chomp $l;
 			@P = split(/\t/, $l);
 			if ($P[0] =~ /^\@/) {
-				if ($P[0] =~ /\@RG/) {
+				if ($P[0] =~ /^\@RG/) {
 					$RG_lines = "TRUE";
 					$origID = $P[1]; $origID =~ s/^ID://;
-					$ORIGINAL_newID{$origID} = rename_cell($origID);
+					if (!defined $ORIGINAL_newID{$origID}) {
+						$ORIGINAL_newID{$origID} = rename_cell($origID);
+					}
 					$newID = $ORIGINAL_newID{$origID};
-					$out_line .= "\@RG\tID:$newID\tSM:$newID\tLB:$newID\tPL:SCI\n";
+					$out_line = "\@RG\tID:$newID\tSM:$newID\tLB:$newID\tPL:SCI";
 				} else {
 					$out_line = $l;
 				}

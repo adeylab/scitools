@@ -8,30 +8,18 @@ use Exporter "import";
 sub met_metextract {
 
 @ARGV = @_;
-#Software Defaults Addition
-$bismark = "/home/groups/oroaklab/src/Bismark-0.18.2/bismark"; #DEFAULT=bismark
-$samtools = "samtools"; #DEFAULT=samtools
-$Rscript = "Rscript"; #DEFAULT=Rscript
-
-# To enable "hg38", "hg19", and "mm10" shorcut usage, ensure all files are present
-%GENOMES = (
-   "hg19" => "/home/groups/oroaklab/refs/hg19/bismark",
-   "hg38" => "/home/groups/oroaklab/refs/hg38/bismark",
-   "mm10" => "/home/groups/oroaklab/refs/mm10/bismark"
-);
 
 $threads = 1;
 
-use Getopt::Std; %opt = ();
 getopts("O:x:t:", \%opt);
 $die2 = "
 scitools met_metextract [options] [Bismark Reference Genome] [De-duplicated Filtered Bismark Aligned Bam] [Output Directory]
 
 sciMET methylation extraction per cell.
 Takes a Bismark alignment file, following removal of duplicates and filtering via bam-filter.
-Generates CG and CH methylation cov files through Bismark (default v. 0.18.2).
+Generates CG and CH methylation cov files through Bismark.
 
-Bismark Reference Genomes are Bismark pre-processed bisulfite converted genomes. Will accept hg19, hg38 and mm10.
+Bismark Reference Genomes are Bismark pre-processed bisulfite converted genomes. Will accept hg19b, hg38b and mm10b.
 
 Output files are modified bed files:
 <CHROM> <START> <END> <methylated C count> <non-methylated C count> <Percent Methylation at C> <Barcode>
@@ -40,13 +28,14 @@ Options:
    -x   [STR]   Bismark call (Default: $bismark)
    -t   [INT]   Number of threads to use for extraction (Default: 1)
    -O   [STR]   Output Prefix (default is bam file prefix)
+
 ";
 
 if (!defined $ARGV[0]) {die $die2};
 if (!defined $ARGV[1]) {die $die2};
 if (!defined $ARGV[2]) {die $die2};
 
-if (!defined $GENOMES{$ARGV[0]}) {die "\n\nERROR: Genome $ARGV[0] is not a proper genome reference! Exiting!\n"} else {$genome = $GENOMES{$ARGV[0]}};
+if (!defined $REF{$ARGV[0]}) {die "\n\nERROR: Genome $ARGV[0] is not a proper genome reference! Exiting!\n"} else {$genome = $REF{$ARGV[0]}};
 
 if (defined $opt{'x'}) {$bismark = $opt{'x'}};
 if (!defined $opt{'t'}) {$opt{'t'} = $threads};

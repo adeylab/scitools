@@ -25,8 +25,8 @@ Options:
    -O   [STR]   Output prefix (default is input prefix)
    -D           Output to a directory (will add to it if it exists)
    -B   [BED]   Bed file of peaks (optional)
-   -G   {STR]   Gene info (refGene.txt formats)
-                Shortcut eg: hg38, hg19, mm10 (see scitools -h for more details)
+   -G   [STR]   Gene info (refGene.txt formats)
+                Shortcut eg: hg38, hg19, mm10
    -S   [INT]   Flanking size if gene names are specified
                 (reuires -G, def = $flanking_size)
    -A   [STR]   Annotation file (to color code reads)

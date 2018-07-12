@@ -166,10 +166,10 @@ PointPlot<-ggplot() + ";
 # plot the original dims w/ respective color
 if (!defined $opt{'c'} && !defined $opt{'C'} && !defined $opt{'A'}) {
 	print R "
-	geom_point(aes(x=IN\$V2,y=IN\$V3),color=\"lightsteelblue4\",size=$ptSize,alpha=$alpha) +";
+	geom_point(aes(x=IN\$V2,y=IN\$V3),color=\"lightsteelblue4\",size=$ptSize,alpha=$alpha,shape=16) +";
 } else {
 	print R "
-	geom_point(aes(x=IN\$V2,y=IN\$V3,color=IN\$V4),size=$ptSize,alpha=$alpha) +
+	geom_point(aes(x=IN\$V2,y=IN\$V3,color=IN\$V4),size=$ptSize,alpha=$alpha,shape=16) +
 	guides(colour = guide_legend(override.aes = list(size=4))) +";
 }
 
@@ -309,10 +309,10 @@ PointPlot<-ggplot() +";
 # plot the original dims w/ respective color
 if (!defined $opt{'c'} && !defined $opt{'C'} && !defined $opt{'A'}) {
 	print R "
-	geom_point(aes(IN\$odim1,IN\$odim2),color=\"lightsteelblue4\",size=1) +";
+	geom_point(aes(IN\$odim1,IN\$odim2),color=\"lightsteelblue4\",size=$ptSize,alpha=$alpha,shape=16) +";
 } else {
 	print R "
-	geom_point(aes(IN\$odim1,IN\$odim2,color=IN\$annot),size=1) +
+	geom_point(aes(IN\$odim1,IN\$odim2,color=IN\$annot),size=$ptSize,alpha=$alpha,shape=16) +
 	guides(colour = guide_legend(override.aes = list(size=4))) +";
 }
 
@@ -323,7 +323,7 @@ if ($color_mapping !~ /none/i) {
 
 # plot the projected points and color by lambda
 print R "
-	geom_point(aes(IN\$pdim1,IN\$pdim2),color=\"gray30\",size=1) +";
+	geom_point(aes(IN\$pdim1,IN\$pdim2),color=\"gray30\",size=$ptSize,alpha=$alpha,shape=16) +";
 
 # set theme
 if ($theme =~ /Clean/i) {
@@ -380,8 +380,8 @@ CentPlot<-ggplot() +";
 
 # plot the original dims w/ respective color
 print R "geom_segment(aes(x=IN\$odim1,xend=IN\$pdim1,y=IN\$odim2,yend=IN\$pdim2),size=0.2,color=\"lightsteelblue4\") +
-	geom_point(aes(IN\$odim1,IN\$odim2),color=\"lightsteelblue4\",size=0.5) +
-	geom_point(aes(IN\$pdim1,IN\$pdim2,color=IN\$lambda),size=0.75) +
+	geom_point(aes(IN\$odim1,IN\$odim2),color=\"lightsteelblue4\",size=0.5,shape=16) +
+	geom_point(aes(IN\$pdim1,IN\$pdim2,color=IN\$lambda),size=0.75,shape=16) +
 	scale_color_gradientn(colours=gradient_funct(15)) +
 	labs(color=\"Lambda\") +";
 

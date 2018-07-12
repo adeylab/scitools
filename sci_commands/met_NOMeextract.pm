@@ -2,25 +2,14 @@ package sci_commands::met_NOMeextract;
 
 use sci_utils::general;
 use Getopt::Std; %opt = ();
+use Cwd;
+use Data::Dumper;
 use Exporter "import";
-@EXPORT = ("met_metextract");
+@EXPORT = ("met_NOMeextract");
 
 sub met_NOMeextract {
 
 @ARGV = @_;
-
-$gzip = "gzip"; #DEFAULT=gzip
-
-# To enable "hg38", "hg19", and "mm10" shorcut usage, ensure all files are present
-%GENOMES = (
-   "hg19" => "/home/groups/oroaklab/refs/hg19/bismark",
-   "hg38" => "/home/groups/oroaklab/refs/hg38/bismark",
-   "mm10" => "/home/groups/oroaklab/refs/mm10/bismark"
-);
-
-use Getopt::Std; %opt = ();
-use Cwd;
-use Data::Dumper;
 
 getopts("b:O:T:o:", \%opt);
 $die2 = "
@@ -43,12 +32,12 @@ Options:
    -T   [STR]   Temporary Directory for sort files. (Default = Current Directory)
    -o   [STR]   Output Directory
                                 (Default: Current working directory)
-   -b   [STR]   REQUIRED: Bismark Reference Genome, full path to folder. Can also supply hg19, hg38, or mm10 as character arguments.
+   -b   [STR]   REQUIRED: Bismark Reference Genome, full path to folder. Can also supply hg19b, hg38b, or mm10b as character arguments.
+   
 ";
 
-if (!defined $GENOMES{$opt{'b'}}) {die "\n\nERROR: Genome $ARGV[0] is not a proper genome reference! Exiting!\n"} else {$genome = $GENOMES{$opt{'b'}}};
-
 if (!defined $ARGV[0]) {die $die2};
+if (!defined $REF{$opt{'b'}}) {die "\n\nERROR: Genome $ARGV[0] is not a proper genome reference! Exiting!\n"} else {$genome = $REF{$opt{'b'}}};
 if (!defined $opt{'T'}) {$opt{'T'} = getcwd()};
 if (!defined $opt{'o'}) {$opt{'o'} = getcwd()};
 if (!defined $opt{'O'}) {$opt{'O'}=$ARGV[1]; @O = split(/\./,$opt{'O'}); $opt{'O'}=$O[0]};

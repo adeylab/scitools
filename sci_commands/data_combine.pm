@@ -11,10 +11,10 @@ sub data_combine {
 # Defaults
 $maxDim = 15;
 
-getopts("O:D:A:R:z", \%opt);
+getopts("O:D:A:R:zF:", \%opt);
 
 $die2 = "
-scitools combine-data [output_file] [data1_name],[data1_file] [data2_name],[data2_file] etc...
+scitools combine-data [output_file] [data1_name]=[data1_file] [data2_name]=[data2_file] etc...
    or    data-combine
 
 Will report all data from files into the specified output file. If the data name is not
@@ -22,11 +22,18 @@ specified, the file name will be used instead.
 
 Will auto detect the following filetypes from names:
    annot, dims, matrix, lambda, values, complexity
-   
+If it is a different file type it will include as class 'other', to force specifying 'other'
+add another argument after the file that is the specified class - will force 'other'
+   [data_name]=[data_file]=[other_type]
+This can be used for other types of matrix that do not have cellID columns.
+   e.g.   Mean_DevZ=myMeanDeviationByCluster.matrix=matrix
+Which will output with a suffix '.matrix', but will be of class 'other'
+
 For cells without information in a file, NA will be reported.
 
 Options:
    -D   [INT]   Maximum dimension to include for dims files (def = $maxDim)
+   -F   [STR]   File specifying files to combine - will read each line as an input argument.
    -A   [STR]   Only include cells within specified annot file.
    -a   [STR]   Include only specified annotations (in -A), comma sep.
    -R   [STR]   Rename cells using rename.annot file
@@ -37,6 +44,7 @@ Options:
 
 if (defined $opt{'O'}) {unshift @ARGV, $opt{'O'}};
 if (!defined $ARGV[1]) {die $die2};
+if ($ARGV[0] =~ /[,=]/) {die "ERROR: First argument must be the output file, it looks like the first argument specified is an input file.\n$die2"};
 if (defined $opt{'D'}) {$maxDim = $opt{'D'}};
 if (defined $opt{'a'} && !defined $opt{'A'}) {die "\nMust provide an annotaiton file (-A) if specifying annotations to filter (-a)!\n$die2"};
 
@@ -53,24 +61,36 @@ if (defined $opt{'a'}) {
 	}
 }
 
+if (defined $opt{'F'}) {
+	open IN, "$opt{'F'}";
+	while ($l = <IN>) {
+		chomp $l;
+		push @ARGV, $l;
+	} close IN;
+}
+
 # get full file type info and cells present
 $included_cell_ct = 0; $cellID_out = ""; @INCLUDED_CELLIDS = ();
 for ($i = 1; $i < @ARGV; $i++) {
 	if ($ARGV[$i] =~ /[,=]/) {
-		($name,$file) = split(/[,=]/, $ARGV[$i]);
+		$type = "";
+		($name,$file,$type) = split(/[,=]/, $ARGV[$i]);
+		if ($type ne "") {
+			$CLASS{$i} = "other";
+			$TYPE{$i} = $type;
+		}
 	} else {
 		$name = $ARGV[$i]; $file = $ARGV[$i];
 	}
 	if (-e "$file") {
-		if ($file =~ /\.annot$/) {$CLASS{$i} = "annot"}
-		elsif ($file =~ /\.dims$/) {$CLASS{$i} = "dims"}
-		elsif ($file =~ /\.complexity\.txt$/) {$CLASS{$i} = "complexity"}
-		elsif ($file =~ /\.lambda$/) {$CLASS{$i} = "lambda"}
-		elsif ($file =~ /\.values$/) {$CLASS{$i} = "values"}
-		elsif ($file =~ /\.matrix$/) {$CLASS{$i} = "matrix"}
+		if ($file =~ /\.annot$/ && !defined $CLASS{$i}) {$CLASS{$i} = "annot"}
+		elsif ($file =~ /\.dims$/ && !defined $CLASS{$i}) {$CLASS{$i} = "dims"}
+		elsif ($file =~ /\.complexity\.txt$/ && !defined $CLASS{$i}) {$CLASS{$i} = "complexity"}
+		elsif ($file =~ /\.lambda$/ && !defined $CLASS{$i}) {$CLASS{$i} = "lambda"}
+		elsif ($file =~ /\.values$/ && !defined $CLASS{$i}) {$CLASS{$i} = "values"}
+		elsif ($file =~ /\.matrix$/ && !defined $CLASS{$i}) {$CLASS{$i} = "matrix"}
 		else {
-			print STDERR "\nWARNING: Cannot determine file type for file: $file, skipping!\n";
-			$SKIP{$i} = 1;
+			$CLASS{$i} = "other";
 		}
 		if (!defined $SKIP{$i}) {
 			$FILES{$i} = $file;
@@ -267,18 +287,37 @@ for ($i = 1; $i < @ARGV; $i++) {
 			}
 		} elsif ($CLASS{$i} eq "matrix") {
 			print OUT "#MATRIX_DATA\tNAME=$NAMES{$i}\tFILE=$FILES{$i}\n";
-			read_matrix($FILES{$i});
-			foreach $feature (sort {$a cmp $b} @MATRIX_ROWNAMES) {
+			open MAT, "$FILES{$i}";
+			$mat_head = <MAT>; chomp $mat_head; @MATRIX_CELLS = split(/\t/, $mat_head);
+			%MATRIX_CELLID_pos = ();
+			for ($cellPos = 0; $cellPos < @MATRIX_CELLS; $cellPos++) {
+				$MATRIX_CELLID_pos{$MATRIX_CELLS[$cellPos]} = $cellPos;
+			}
+			while ($mat_l = <MAT>) {
+				chomp $mat_l;
+				@MAT_FIELDS = split(/\t/, $mat_l);
+				$feature = shift(@MAT_FIELDS);
 				print OUT "$NAMES{$i}\t$feature";
 				for ($j = 0; $j < @INCLUDED_CELLIDS; $j++) {
 					$cellID = $INCLUDED_CELLIDS[$j];
-					if (defined $CELLID_FEATURE_value{$cellID}{$feature}) {
-						print OUT "\t$CELLID_FEATURE_value{$cellID}{$feature}";
+					if (defined $MATRIX_CELLID_pos{$cellID}) {
+						$value = $MAT_FIELDS[$MATRIX_CELLID_pos{$cellID}];
 					} else {
-						print OUT "\tNA";
+						$value = "NA";
 					}
-				} print OUT "\n";
+					print OUT "\t$value";
+				}
+				print OUT "\n";
 			}
+			close MAT;
+		} elsif ($CLASS{$i} eq "other") {
+			if (!defined $TYPE{$i}) {$TYPE{$i} = "txt"};
+			print OUT "#OTHER_DATA\tNAME=$NAMES{$i}\tFILE=$FILES{$i}\tTYPE=$TYPE{$i}\n";
+			open IN, "$FILES{$i}";
+			while ($in_l = <IN>) {
+				chomp $in_l;
+				print OUT "$NAMES{$i}\t$in_l\n";
+			} close IN;
 		}
 	}
 }
