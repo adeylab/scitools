@@ -8,6 +8,7 @@ use Exporter "import";
 	"load_defaults",
 		qw($color_mapping),qw($ref_shortcuts),qw(@BASES),qw(%REF),qw(%VAR),qw($gzip),qw($zcat),
 		qw($bwa),qw($samtools),qw($scitools),qw($macs2),qw($bedtools),qw($Rscript),qw($Pscript),
+		qw($bismark),qw($bowtie2),
 	"read_annot",
 		qw(%CELLID_annot),qw(%ANNOT_count),qw($annot_count),qw(@ANNOT_FILES),
 	"read_complexity",
@@ -33,8 +34,9 @@ use Exporter "import";
 		qw(%INDEX_POS_SEQ_id),qw(%INDEX_POS_SEQ_well),
 	"read_indexdir",
 		qw(%INDEX_TYPE_SEQ_seq),qw(%INDEX_TYPE_SEQ_id),qw(%INDEX_TYPE_length),qw($indexes_loaded),
+		qw(%INDEX_TYPE_class),qw(%INDEX_TYPE_format),qw(%INDEX_CLASS_format),
 	"read_refgene",
-		qw(%GENENAME_coords),qw(%GENEID_coords),qw(%GENECOORDS_refGene),
+		qw(%GENENAME_coords),qw(%GENEID_coords),qw(%GENECOORDS_refGene),qw(%GENEID_strand),qw(%GENENAME_geneID),
 	"get_gradient",
 	"load_gradient_defaults",
 		qw(%COLOR_GRADIENT),
@@ -68,22 +70,28 @@ sub load_defaults {
 					elsif ($var eq "bedtools") {$bedtools = $val}
 					elsif ($var eq "Rscript") {$Rscript = $val}
 					elsif ($var eq "Pscript") {$Pscript = $val}
+					elsif ($var eq "bowtie2") {$bowtie2 = $val}
+					elsif ($var eq "bismark") {$bismark = $val}
 					else {$VAR{$var} = $val};
 				}
 			}
 		} close DEF;
-	} else {
-		# No config file = load default executables for convenience
-		$gzip = "gzip"; #DEFAULT=gzip
-		$zcat = "zcat"; #DEFAULT=zcat
-		$bwa = "bwa"; #DEFAULT=bwa
-		$samtools = "samtools"; #DEFAULT=samtools
-		$scitools = "scitools"; #DEFAULT=scitools
-		$macs2 = "macs2"; #DEFAULT=macs2
-		$bedtools = "bedtools"; #DEFAULT=bedtools
-		$Rscript = "Rscript"; #DEFAULT=Rscript
-		$Pscript = "python"; #DEFAULT=Pscript
 	}
+	# Load vars that need to be specified for functionality if they are not found in the config file
+	if (!defined $gzip) {$gzip = "gzip"};
+	if (!defined $zcat) {$zcat = "zcat"};
+	if (!defined $bwa) {$bwa = "bwa"};
+	if (!defined $samtools) {$samtools = "samtools"};
+	if (!defined $scitools) {$scitools = "scitools"};
+	if (!defined $macs2) {$macs2 = "macs2"};
+	if (!defined $bedtools) {$bedtools = "bedtools"};
+	if (!defined $Rscript) {$Rscript = "Rscript"};
+	if (!defined $Pscript) {$Pscript = "python"};
+	if (!defined $bowtie2) {$bowtie2 = "bowtie2"};
+	if (!defined $bismark) {$bismark = "bismark"};
+	if (!defined $VAR{'index_directory'}) {$VAR{'index_directory'} = "$_[1]/index_files"};
+	if (!defined $VAR{'SCI_index_file'}) {$VAR{'SCI_index_file'} = "$_[1]/SCI_Indexes.txt"};
+	if (!defined $VAR{'sci_modes'}) {$VAR{'sci_modes'} = "$_[1]/sci_modes.cfg"};
 }
 
 sub read_annot {
@@ -274,6 +282,8 @@ sub read_indexdir {
 	%INDEX_TYPE_SEQ_seq = ();
 	%INDEX_TYPE_SEQ_id = ();
 	%INDEX_TYPE_length = ();
+	%INDEX_TYPE_class = ();
+	%INDEX_TYPE_format = ();
 	$indexes_loaded = 0;
 	@INDEX_FILES = split(/,/, $_[0]);
 	foreach $index_specification (@INDEX_FILES) {
@@ -284,72 +294,30 @@ sub read_indexdir {
 		} else {
 			open INDEX, "$target";
 		}
+		$index_class = "null"; $index_format = "null";
 		while ($index_line = <INDEX>) {
 			chomp $index_line;
-			($index_id,$index_type_raw,$index_seq_raw) = split(/\t/, $index_line);
-			$index_type = lc($index_type_raw);
-			$index_seq = uc($index_seq_raw);
-			($id_tier,$id_set,$id_side,$id_well) = split(/_/, $index_id);
-			$INDEX_TYPE_SEQ_seq{$index_type}{$index_seq} = $index_seq;
-			$INDEX_TYPE_length{$index_type} = length($index_seq);
-			$INDEX_TYPE_SEQ_id{$index_type}{$index_seq} = $index_id;
-			$indexes_loaded++;
+			if ($index_line =~ /^#/) {
+				$index_line =~ s/^#//;
+				($var,$val) = split(/=/, $index_line);
+				if ($var =~ /index_class/) {$index_class = $val};
+				if ($var =~ /index_format/) {$index_format = $val};
+			} else {
+				if ($index_class eq "null") {print STDERR "WARNING: Index file does not have a header specification. This will affect any annot-make call.\n\tMake sure all index files have a header with #index_class and #index_format fields.\n"};
+				($index_id,$index_type_raw,$index_seq_raw) = split(/\t/, $index_line);
+				$index_type = lc($index_type_raw);
+				$index_seq = uc($index_seq_raw);
+				($id_tier,$id_set,$id_side,$id_well) = split(/_/, $index_id);
+				$INDEX_TYPE_SEQ_seq{$index_type}{$index_seq} = $index_seq;
+				$INDEX_TYPE_length{$index_type} = length($index_seq);
+				$INDEX_TYPE_SEQ_id{$index_type}{$index_seq} = $index_id;
+				$INDEX_TYPE_class{$index_type} = $index_class;
+				$INDEX_TYPE_format{$index_type} = $index_format;
+				$INDEX_CLASS_format{$index_class} = $index_format;
+				$indexes_loaded++;
+			}
 		} close INDEX;
 	}
-}
-
-sub read_mode { # FOR MODE IMPLEMENTATION
-	$sci_modes_file = $_[0];
-	%MODE_GROUP_CLASS_PARTS = ();
-	%ALIAS_mode = ();
-	open MODES, "$sci_modes_file" || die "ERROR: Cannot open sci_modes file: $sci_modes_file.\n";
-	while ($mode_l = <MODES>) {
-		if ($mode_l !~ /^#/) {
-			chomp $mode_l;
-			if ($mode_l =~ /^>/) {
-				$mode_l =~ s/^>//;
-				@MODE_ALIASES = split(/,/, $mode_l);
-				$mode_name = $MODE_ALIASES[0];
-				for ($aliasID = 0; $aliasID < @MODE_ALIASES; $aliasID++) {
-					$ALIAS_mode{$MODE_ALIASES[$aliasID]} = $mode_name;
-					#print STDERR "Adding alias $MODE_ALIASES[$aliasID] to $mode_name\n";
-				}
-				$mode_group = 0;
-			} elsif ($mode_l =~ /\&/) {
-				$mode_group++;
-				#print STDERR " >>> Jumping to a second mode group <<<\n";
-			} else {
-				($item,$spec) = split(/=/, $mode_l);
-				#print STDERR " item = $item, spec = $spec\n";
-				if ($item =~ /name/) {
-					$MODE_GROUP_CLASS_PARTS{$mode_name}[$mode_group]{'name'} = $spec;
-					#print STDERR "   $item is a name, adding to names.\n";
-				} else {
-					@READ_PARTS = split(/,/, $spec);
-					$current_offset = 0;
-					#print STDERR "   Parsing read parts:\n";
-					for ($read_partID = 0; $read_partID < @READ_PARTS; $read_partID++) {
-						($read_item,$item_length) = split(/:/, $READ_PARTS[$read_partID]);
-						#print STDERR "      Part = $read_item, length = $item_length, current offset = $current_offset\n";
-						if ($read_item =~ /null/) {
-							$current_offset += $item_length; # do not load anything for null bases, just add offset
-						} else {
-							if ($read_item =~ /^read_/) {
-								$read_name = $read_item;
-								$read_name =~ s/^read_//;
-								push @{$MODE_GROUP_CLASS_PARTS{$mode_name}[$mode_group]{'read_outputs'}}, $read_name;
-								#print STDERR "         Part is a read - adding to read outputs - named: $read_name\n";
-							}
-							push @{$MODE_GROUP_CLASS_PARTS{$mode_name}[$mode_group]{$item}{'name'}}, $read_item;
-							push @{$MODE_GROUP_CLASS_PARTS{$mode_name}[$mode_group]{$item}{'length'}}, $item_length;
-							push @{$MODE_GROUP_CLASS_PARTS{$mode_name}[$mode_group]{$item}{'offset'}}, $current_offset;
-							if ($item_length =~ /^\d+$/) {$current_offset += $item_length};
-						}
-					}
-				}
-			}
-		}
-	} close MODES;
 }
 
 sub read_indexes {
@@ -369,7 +337,9 @@ sub read_refgene {
 	%GENENAME_coords = ();
 	%GENEID_coords = ();
 	%GENECOORDS_refGene = ();
-	open REFGENE, "$_[0]";
+	%GENEID_strand = ();
+	%GENENAME_geneID = ();
+	open REFGENE, "$_[0]" || die "ERROR: Cannot open refgene file: $_[0]!\n";
 	while ($refgene_line = <REFGENE>) {
 		chomp $refgene_line;
 		@REFGENE = split(/\t/, $refgene_line);
@@ -377,6 +347,8 @@ sub read_refgene {
 		$GENEID_coords{$REFGENE[1]} = $gene_coords;
 		$GENENAME_coords{$REFGENE[12]} = $gene_coords;
 		$GENECOORDS_refGene{$gene_coords} = $refgene_line;
+		$GENEID_strand{$REFGENE[1]} = $REFGENE[3];
+		$GENENAME_geneID{$REFGENE[12]} = $REFGENE[1];
 	} close REFGENE;
 }
 
