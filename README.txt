@@ -2,7 +2,7 @@ scitools Version: 0.1.3
 Adey Lab (www.adeylab.org, www.github.com/adeylab/scitools)
 
 WARNING: scitools is still in a development stage - a number of
-commands may still be unstable.
+commands are in active development.
 
 scitools is a set of scripts designed for working with single-cell
 combinatorial indexing data. It includes tools to go from fastq files
@@ -41,7 +41,7 @@ R packages:
    Rtsne           For tSNE visualization
    methods         For PCA
    dbscan          For density-based clustering
-   irlba           For fast SVD
+   irlba           For fast SVD (recommended)
 
 File Types used by scitools:
 
@@ -69,51 +69,3 @@ File Types used by scitools:
                range of values (e.g. which dimensions to use from a dims file)
                This is a comma separated list and can include dashes for a
                range of values (e.g. 1,3-6,8-10,13)
-
-Typical scitools analysis for sci-ATAC-seq:
-
-   1) Make an annotation file for demultiplexing a sequencing run:
-      scitools annot-make -p   # this will output an example annot csv file, edit in excel
-      scitools annot-make -P [myExperimentDescriptorFile.csv] > [mySamples.annot]
-
-   2) Demultiplex and reformat raw fastq files:
-      scitools fastq-dump -A [mySamples.annot] -R [RUN_NAME, must be in fastq directory]
-
-   3) Align fastq files (if reference defaults are set up use hg38, hg19, or mm10)
-      scitools align -t [n threads] [reference_prefix or shortcut] [reads.sampleA.1.fq.gz] [reads.sampleA.2.fq.gz] [sampleA_prefix]
-
-   4) Remove duplicates and create complexity file:
-      scitools rmdup [sampleA].bam
-
-   5) Plot complexity file to assess library performance and determine bam filters:
-      scitools plot-complexity [sampleA].complexity.txt
-         Note: if multiple conditions are present in the sample, create a condition annot file as in step 1
-               you can then add '-A [myConditions.annot]' to the above command to plot by conditions.
-               It is also possible to specify colors for plotting conditions using -C or -c
-
-   6) Determine performance and filter bam to remove noise reads:
-      scitools bam-filter -N [read threshold, ~1000] -C [sampleA].complexity.txt -c [min compl, 0],[max compl, 60]
-
-   7) Examine index-based perfoemance on filtered bam:
-      scitools index-performance [sampleA].bbrd.q10.filt.bam
-
-   8) Call ATAC peaks (macs2):
-      scitools callpeak -f [reference.fai file] [sampleA].bbrd.q10.filt.bam
-
-   9) Make a counts matrix:
-      scitools atac-counts [sampleA].bbrd.q10.filt.bam [sampleA].bbrd.q10.filt.bed
-
-   10) Filter the counts matrix:
-      scitools matrix-filter [sampleA counts matrix]
-
-   11) Perform term-frequency inverse-document-frequency tarnsformation:
-      scitools tfidf [sampleA filtered matrix]
-
-   12) Latent semantic indexing:
-      scitools lsi [sampleA tfidf matrix]
-
-   13) Visualize via tSNE:
-      scitools tsne [sampleA LSI matrix]
-
-   14) Plot tSNE:
-      scitools plot-dims -A [myConditions.annot] [sampleA LSI].tsne.dims
