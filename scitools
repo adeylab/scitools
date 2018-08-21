@@ -206,13 +206,6 @@ sub load_aliases {
 	# Data Comamnds
 	foreach $alias ("combine_data", "data_combine") {$COMMAND_ALIAS{$alias} = "data_combine"};
 	foreach $alias ("split_data", "data_split") {$COMMAND_ALIAS{$alias} = "data_split"};
-		
-	# sci-MET / sci-NOMe
-	foreach $alias ("met_nomeextract", "nomeextract", "met_nome_extract", "nome_extract", "extract_nome") {$COMMAND_ALIAS{$alias} = "met_NOMeextract"};
-	foreach $alias ("met_metextract", "metextract", "met_extract", "extract_met") {$COMMAND_ALIAS{$alias} = "met_metextract"};
-	foreach $alias ("met_metfilter", "metfilter", "met_filter", "filter_met") {$COMMAND_ALIAS{$alias} = "met_metfilter"};
-	foreach $alias ("met_probesummary", "met_probe_summary") {$COMMAND_ALIAS{$alias} = "met_probesummary"};
-	foreach $alias ("met_probeview", "met_probe_view") {$COMMAND_ALIAS{$alias} = "met_probeview"};
 	
 }
 
@@ -279,12 +272,5 @@ sub load_descriptions {
 	$COMMAND_DESCRIPTOR{"index_performance"} = "Index performance on fastq or bam";
 	$COMMAND_DESCRIPTOR{"data_combine"} = "Combine matrixes, annotations, dims to a table";
 	$COMMAND_DESCRIPTOR{"data_split"} = "Breaks a combined data file into component files";
-	
-	$COMMAND_DESCRIPTOR{"met_NOMeextract"} = "Extract NOMe seq methylation data";
-	$COMMAND_DESCRIPTOR{"met_metextract"} = "Extract methylaiton data from sci-MET";
-	$COMMAND_DESCRIPTOR{"met_metfilter"} = "Filter extracted methylaiton data";
-	$COMMAND_DESCRIPTOR{"met_probesummary"} = "Summarize methylaiton over regions";
-	$COMMAND_DESCRIPTOR{"met_probeview"} = "Visualize methylaiton over regions";
-	
 
 }
