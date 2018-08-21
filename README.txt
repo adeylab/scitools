@@ -1,3 +1,7 @@
+dev-sci-met branch includes additional functions used for sci-MET
+data processing and analysis. The functions are ported over from
+Mulqueen et. al. Nat. Biotech. 2018 and are still under development.
+
 scitools Version: 0.1.3
 Adey Lab (www.adeylab.org, www.github.com/adeylab/scitools)
 
