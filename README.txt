@@ -4,6 +4,15 @@ Adey Lab (www.adeylab.org, www.github.com/adeylab/scitools)
 WARNING: scitools is still in a development stage - a number of
 commands are in active development.
 
+SETUP: To set up scitools, download the repository to the
+location you want the executable to be. Keep all index files
+and folders within the scitools directory. We recommend adding
+the scitools execulable to your path. We also recommend editing the
+scitools.cfg file to add in command-line callable executables used
+by scitools, defaults assume they are all in your path. Once it is
+set up, run 'scitools deoendencies' which will check for external
+software that scitools relies on.
+
 scitools is a set of scripts designed for working with single-cell
 combinatorial indexing data. It includes tools to go from fastq files
 off of the sequencer (after bcl2fastq) to a processed dataset. It
