@@ -143,6 +143,8 @@ sub load_aliases {
 	foreach $alias ("fastq_split", "split_fastq") {$COMMAND_ALIAS{$alias} = "fastq_split"};
 	foreach $alias ("fastq_merge", "merge_fastq") {$COMMAND_ALIAS{$alias} = "fastq_merge"};
 	foreach $alias ("fastq_align", "align_fastq", "align") {$COMMAND_ALIAS{$alias} = "fastq_align"};
+	foreach $alias ("fastq_from_geo", "geo2fastq", "fastq_geo", "geo_fastq",
+	                "fastq_from_sra", "sra2fastq", "fastq_sra", "sra_fastq") {$COMMAND_ALIAS{$alias} = "fastq_from_geo"};
 	
 	# Bam Commands
 	foreach $alias ("bam_bulk2sci", "bulk2sci") {$COMMAND_ALIAS{$alias} = "bam_bulk2sci"};
@@ -206,6 +208,13 @@ sub load_aliases {
 	# Data Comamnds
 	foreach $alias ("combine_data", "data_combine") {$COMMAND_ALIAS{$alias} = "data_combine"};
 	foreach $alias ("split_data", "data_split") {$COMMAND_ALIAS{$alias} = "data_split"};
+		
+	# sci-MET / sci-NOMe
+	foreach $alias ("met_nomeextract", "nomeextract", "met_nome_extract", "nome_extract", "extract_nome") {$COMMAND_ALIAS{$alias} = "met_NOMeextract"};
+	foreach $alias ("met_metextract", "metextract", "met_extract", "extract_met") {$COMMAND_ALIAS{$alias} = "met_metextract"};
+	foreach $alias ("met_metfilter", "metfilter", "met_filter", "filter_met") {$COMMAND_ALIAS{$alias} = "met_metfilter"};
+	foreach $alias ("met_probesummary", "met_probe_summary") {$COMMAND_ALIAS{$alias} = "met_probesummary"};
+	foreach $alias ("met_probeview", "met_probe_view") {$COMMAND_ALIAS{$alias} = "met_probeview"};
 	
 }
 
@@ -224,6 +233,7 @@ sub load_descriptions {
 	$COMMAND_DESCRIPTOR{"fastq_split"} = "Split SCI fastq files using annotation file";
 	$COMMAND_DESCRIPTOR{"fastq_merge"} = "Merge fastq files that have the same barcodes";
 	$COMMAND_DESCRIPTOR{"fastq_align"} = "Align fastq files and sort resulting bam file";
+	$COMMAND_DESCRIPTOR{"fastq_from_geo"} = "Convert GEO or SRA fqs w/ barcodes to scitools fq";
 	$COMMAND_DESCRIPTOR{"bam_bulk2sci"} = "Merge multiple bulk bam files to one SCI bam";
 	$COMMAND_DESCRIPTOR{"bam_addrg"} = "Add RG lines to bam";
 	$COMMAND_DESCRIPTOR{"bam_rmdup"} = "Barcode-based duplicate removal";
@@ -272,5 +282,12 @@ sub load_descriptions {
 	$COMMAND_DESCRIPTOR{"index_performance"} = "Index performance on fastq or bam";
 	$COMMAND_DESCRIPTOR{"data_combine"} = "Combine matrixes, annotations, dims to a table";
 	$COMMAND_DESCRIPTOR{"data_split"} = "Breaks a combined data file into component files";
+	
+	$COMMAND_DESCRIPTOR{"met_NOMeextract"} = "Extract NOMe seq methylation data";
+	$COMMAND_DESCRIPTOR{"met_metextract"} = "Extract methylaiton data from sci-MET";
+	$COMMAND_DESCRIPTOR{"met_metfilter"} = "Filter extracted methylaiton data";
+	$COMMAND_DESCRIPTOR{"met_probesummary"} = "Summarize methylaiton over regions";
+	$COMMAND_DESCRIPTOR{"met_probeview"} = "Visualize methylaiton over regions";
+	
 
 }
