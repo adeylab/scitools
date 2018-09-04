@@ -10,21 +10,24 @@ and folders within the scitools directory. We recommend adding
 the scitools execulable to your path. We also recommend editing the
 scitools.cfg file to add in command-line callable executables used
 by scitools, defaults assume they are all in your path. Once it is
-set up, run 'scitools deoendencies' which will check for external
+set up, run 'scitools dependencies' which will check for external
 software that scitools relies on.
 
-scitools is a set of scripts designed for working with single-cell
-combinatorial indexing data. It includes tools to go from fastq files
-off of the sequencer (after bcl2fastq) to a processed dataset. It
-includes a number of external tools and R packages that are called
-by scitools. If scitools is used, be sure to cite those tools!
+DESCRIPTION: scitools is a set of scripts designed for working with
+single-cell combinatorial indexing data. It includes tools to go from
+fastq files (after bcl2fastq) to a processed dataset. It includes a
+number of external tools and R packages that are called by scitools.
+If scitools is used, be sure to cite those tools!
 
 scitools commands are in the form of [class]-[operation]. Most can
 be specified in reverse order, or if the operation is unique to the
 class of files or the class type can be determined by the files in
 the arguments then just the operation name can be specified.
+Run 'scitools list' for a list of commands, or
+'scitools list [keyword]' to list commands that include the keyword,
+e.g. 'scitools list fastq'
 
-Dependencies: (command-line callable, can be specified in options)
+DEPENDENCIES: (command-line callable, can be specified in options)
 Run scitools dependencies to check software and R requirements.
 The default executables can be altered in the scitools.cfg file.
 A user may also have their own personal scitools.cfg file in their
