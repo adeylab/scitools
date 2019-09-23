@@ -116,7 +116,8 @@ for ($in_file = 0; $in_file < @ARGV; $in_file++) {
 					$out_line = $l;
 				}
 			} else {
-				($origID,$tail_info) = split(/:/, $P[0]);
+				$origID = $P[0]; $origID =~ s/:.+$//;
+				$tail_info = $P[0]; $tail_info =~ s/^.+://;
 				if ($RG_lines eq "TRUE" && !defined $ORIGINAL_newID{$origID}) {
 					$out_line = "00EXCL00";
 				} else {
@@ -172,7 +173,7 @@ for ($in_file = 0; $in_file < @ARGV; $in_file++) {
 						$out_line .= "\t$P[$i]";
 					}
 				}
-				print OUT "$new_header\n";
+				print OUT "$out_line\n";
 			}
 			close OUT;
 		} close IN;
@@ -197,8 +198,29 @@ for ($in_file = 0; $in_file < @ARGV; $in_file++) {
 			}
 		} close IN;
 		if (!defined $opt{'D'}) {close OUT};
+	} elsif ($ARGV[$in_file] =~ /\.complexity\.txt$/i) { # complexity
+		open IN, "$ARGV[$in_file]";
+		$out =~ s/\.complexity\.txt$//;
+		if (!defined $opt{'D'}) {
+			open OUT, ">$out.renamed.complexity.txt";
+		}
+		while ($l = <IN>) {
+			chomp $l;
+			@P = split(/\t/, $l);
+			$origID = $P[1];
+			if (!defined $ORIGINAL_newID{$origID}) {
+				$ORIGINAL_newID{$origID} = rename_cell($origID);
+			}
+			$newID = $ORIGINAL_newID{$origID};
+			if (!defined $opt{'D'} && $newID !~ /00EXCL00/) {
+				$P[1] = $newID;
+				$out_line = join("\t", @P);
+				print OUT "$out_line\n";
+			}
+		} close IN;
+		if (!defined $opt{'D'}) {close OUT};
 	} else {
-		print STDERR "ERROR: Cannot determine input file type of $ARGV[$in_file] based ont he file extension.\n";
+		print STDERR "ERROR: Cannot determine input file type of $ARGV[$in_file] based on the file extension.\n";
 	}
 }
 

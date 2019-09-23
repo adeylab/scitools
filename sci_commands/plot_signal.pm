@@ -15,7 +15,7 @@ $max = 5;
 $width_spec = "each=1";
 $height=6;
 
-getopts("O:r:G:R:Xh:w:", \%opt);
+getopts("O:r:G:R:Xh:w:V:H:", \%opt);
 
 $die2 = "
 scitools plot-signal [options] [(zscored) signal file]
@@ -29,6 +29,8 @@ Options:
    -h   [INS]   Height of plot (inches, def = $height)
    -w   [STR]   Width of plot (in, each=[for each annot] or all=[total width]
                   if a single number will assume total width def = $width_spec)
+   -V   [STR]   Vertical line deliminators file (.vlines.txt)
+   -H   [STR]   Horizontal line deliminators file (.hlines.txt)
    -R   [STR]   Rscript call (def = $Rscript)
    -X           Do not delete intermediate files (def = delete)
 
@@ -86,16 +88,40 @@ open R, ">$opt{'O'}.plot.r";
 print R "
 library(ggplot2)
 $gradient_function
-IN<-read.table(\"$opt{'O'}.plot\")
+IN<-read.table(\"$opt{'O'}.plot\")";
+
+if (defined $opt{'V'}) {
+	print R "
+VL<-read.table(\"$opt{'V'}\")";
+}
+
+if (defined $opt{'H'}) {
+	print R "
+HL<-read.table(\"$opt{'H'}\")";
+}
+
+print R "
 colnames(IN)<-c(\"row\",\"col\",\"val\")
 PLT<-ggplot() + theme_bw() +
-	geom_tile(aes(IN\$col,IN\$row,fill=IN\$val)) +
+	geom_tile(aes(IN\$col,IN\$row,fill=IN\$val)) +";
+
+if (defined $opt{'V'}) {
+	print R "
+	geom_vline(aes(xintercept = VL\$V1),linetype=\"dotted\",color=\"black\",size=0.25) +";
+}
+
+if (defined $opt{'H'}) {
+	print R "
+	geom_hline(aes(yintercept = HL\$V1),linetype=\"dashed\",color=\"black\",size=0.25) +";
+}
+
+print R "
 	theme(axis.title.x=element_blank(),
 		axis.text.x=element_blank(),
-        axis.ticks.x=element_blank(),
+		axis.ticks.x=element_blank(),
 		axis.title.y=element_blank(),
 		axis.text.y=element_blank(),
-        axis.ticks.y=element_blank(),
+		axis.ticks.y=element_blank(),
 		panel.grid.major=element_blank(),
 		panel.grid.minor=element_blank(),
 		axis.line=element_blank(),

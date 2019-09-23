@@ -38,8 +38,12 @@ while ($l = <IN>) {
 	$rowID = shift(@P);
 	print OUT "$rowID";
 	for ($i = 0; $i < @P; $i++) {
-		$tf = ($P[$i]/$MATRIX_CellID_signal{$MATRIX_COLNAMES[$i]});
-		$score = sprintf("%.6f", $tf*$opt{'N'});
+		if ($P[$i]>0) {
+			$tf = ($P[$i]/$MATRIX_CellID_signal{$MATRIX_COLNAMES[$i]});
+			$score = sprintf("%.6f", $tf*$opt{'N'});
+		} else {
+			$score = "0";
+		}
 		print OUT "\t$score";
 	}
 	print OUT "\n";

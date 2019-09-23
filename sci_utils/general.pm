@@ -8,7 +8,7 @@ use Exporter "import";
 	"load_defaults",
 		qw($color_mapping),qw($ref_shortcuts),qw(@BASES),qw(%REF),qw(%VAR),qw($gzip),qw($zcat),
 		qw($bwa),qw($samtools),qw($scitools),qw($macs2),qw($bedtools),qw($Rscript),qw($Pscript),
-		qw($bismark),qw($bowtie2),
+		qw($bismark),qw($bowtie2),qw($log_check),qw(%LOG_DIR),
 	"read_annot",
 		qw(%CELLID_annot),qw(%ANNOT_count),qw($annot_count),qw(@ANNOT_FILES),
 	"read_complexity",
@@ -25,7 +25,7 @@ use Exporter "import";
 	"read_pcurve_dims",
 		qw(%CELLID_PCURVE_DIMS),
 	"read_values",
-		qw(%CELLID_value),qw(@VALUES),qw($value_min),qw($value_max),qw($value_mean),qw($value_sum),qw($value_median),
+		qw(%CELLID_value),qw(@VALUES),qw($value_min),qw($value_max),qw($value_mean),qw($value_sum),qw($value_median),qw($value_range),
 	"read_ranges",
 		qw(@RANGE_VALUES),qw($range_R_set),
 	"read_mode",
@@ -48,8 +48,9 @@ sub load_defaults {
 	# Some global ones that are not configured
 	$color_mapping = "none";
 	$ref_shortcuts = "";
+	$log_check = "F";
 	@BASES = ("A", "C", "G", "T", "N");
-	%REF; %VAR;
+	%REF; %VAR; %LOG_DIR;
 	if (-e "$_[0]") {
 		open DEF, "$_[0]";
 		while ($def = <DEF>) {
@@ -60,6 +61,10 @@ sub load_defaults {
 					$refID = $var; $refID =~ s/_ref$//;
 					$REF{$refID} = $val;
 					$ref_shortcuts .= "\t$refID = $val\n";
+				} elsif ($var =~ /^LOG/) {
+					$log_check = "T";
+					($projectID,$path) = split(/,/, $val);
+					$LOG_DIR{$path} = $projectID;
 				} else {
 					if ($var eq "gzip") {$gzip = $val}
 					elsif ($var eq "zcat") {$zcat = $val}
@@ -135,7 +140,11 @@ sub read_matrix {
 	%MATRIX_CellID_nonZero = (); %MATRIX_feature_nonZero = ();
 	%MATRIX_CellID_signal = (); %MATRIX_feature_signal = ();
 	$matrix_colNum = 0; $matrix_rowNum = 0;
-	open MAT, "$_[0]";
+	if ($_[0] =~ /\.gz$/) {
+		open MAT, "zcat $_[0] |";
+	} else {
+		open MAT, "$_[0]";
+	}
 	$column_line = <MAT>; chomp $column_line; @MATRIX_COLNAMES = split(/\t/, $column_line);
 	foreach $column (@MATRIX_COLNAMES) {$matrix_colNum++};
 	while ($matrix_line = <MAT>) {
@@ -194,7 +203,7 @@ sub read_color_string {
 
 sub read_color_file {
 	%ANNOT_color = ();
-	open COL_FILE, "$_[0]";
+	open COL_FILE, "$_[0]" || die "ERROR: Cannot open provided color file: $_[0]!\n";
 	$color_mapping = "\"Cell\" = \"lightsteelblue4\",";
 	while ($color_assignment = <COL_FILE>) {
 		chomp $color_assignment;
@@ -309,7 +318,11 @@ sub read_indexdir {
 				$index_seq = uc($index_seq_raw);
 				($id_tier,$id_set,$id_side,$id_well) = split(/_/, $index_id);
 				$INDEX_TYPE_SEQ_seq{$index_type}{$index_seq} = $index_seq;
-				$INDEX_TYPE_length{$index_type} = length($index_seq);
+				if (!defined $INDEX_TYPE_length{$index_type}) {
+					$INDEX_TYPE_length{$index_type} = length($index_seq);
+				} elsif ($INDEX_TYPE_length{$index_type} != length($index_seq)) {
+					die "ERROR: Index type: $index_type has indexes of different lengths! ".length($index_seq)." and $INDEX_TYPE_length{$index_type}\n";
+				}
 				$INDEX_TYPE_SEQ_id{$index_type}{$index_seq} = $index_id;
 				$INDEX_TYPE_class{$index_type} = $index_class;
 				$INDEX_TYPE_format{$index_type} = $index_format;

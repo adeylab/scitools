@@ -16,7 +16,7 @@ $min_unique = 1000;
 $read_increments = 10000000;
 $gradient_def = "BuYlRd";
 
-getopts("s:O:n:t:c:R:r:XPfG:", \%opt);
+getopts("s:O:n:t:c:R:r:XPfG:e", \%opt);
 
 $die2 = "
 scitools bam-project [options] [non rmdup bam OR rand_reads.txt]
@@ -55,6 +55,7 @@ Options:
                 For all available gradients, run 'scitools gradient'
    -s   [STR]   Samtools call (def = $samtools)
    -R   [STR]   Rscript call (def = $Rscript)
+   -e           Plot projections for every cell (def = no)
    -X           Keep intermediate files (def = delete)
    -f           Filter out models
                 (agressive; may fail, but if it works, it may
@@ -204,6 +205,7 @@ if ($fail_frac > 0.1) {
 }
 
 open CELL_PROJ, ">$opt{'O'}.read_projections/cell_projections.txt";
+open CELL_SUMMARY, ">$opt{'O'}.read_projections/cell_summaries.txt";
 open MED_PROJ, ">$opt{'O'}.read_projections/summary_projections.txt";
 
 $projected_complexity = 1;
@@ -225,14 +227,50 @@ while ($projected_complexity > 0.05) {
 	@UNIQ_RDSs = sort {$a<=>$b} @UNIQ_RDS;
 	$projected_unique = $UNIQ_RDSs[int($len/2)];
 	$projected_mean = int($uniq_read_sum/$len);
+	$projected_max = $UNIQ_RDSs[($len-1)];
+	$projected_min = $UNIQ_RDSs[0];
+	$projected_top25 = $UNIQ_RDSs[int($len*0.25)];
+	$projected_bot25 = $UNIQ_RDSs[int($len*0.75)];
+	$projected_top10 = $UNIQ_RDSs[int($len*0.1)];
+	$projected_bot10 = $UNIQ_RDSs[int($len*0.9)];
 	if ($projected_complexity != $previous_complexity) {
 		print MED_PROJ "$projected_complexity\t$projected_read_total\t$projected_unique\t$projected_mean\n";
+		print CELL_SUMMARY "$projected_complexity\t$projected_read_total\t$projected_max\t$projected_min\t$projected_top25\t$projected_bot25\t$projected_top10\t$projected_bot10\n";
 		$previous_complexity = $projected_complexity;
 	}
 	$projected_read_total += $read_increments;
 }
-close CELL_PROJ; close MED_PROJ;
+close CELL_PROJ; close MED_PROJ; close CELL_SUMMARY;
 
+if (!defined $opt{'e'}) {
+open R, ">$opt{'O'}.read_projections/plot_projections.r";
+print R "
+library(ggplot2)
+$gradient_function
+RANGE<-read.table(\"$opt{'O'}.read_projections/cell_summaries.txt\")
+SUMMARY<-read.table(\"$opt{'O'}.read_projections/summary_projections.txt\")
+PLT<-ggplot() + theme_bw() +
+	geom_ribbon(aes(x=(RANGE\$V1*100),ymin=log10(RANGE\$V6),ymax=log10(RANGE\$V5)),fill=\"lightsteelblue4\",alpha=0.5) +
+#	geom_line(aes((RANGE\$V1*100),log10(RANGE\$V3)),color=\"black\",size=0.5,linetype=\"dashed\") +
+#	geom_line(aes((RANGE\$V1*100),log10(RANGE\$V4)),color=\"black\",size=0.5,linetype=\"dashed\") +
+	geom_line(aes((RANGE\$V1*100),log10(RANGE\$V5)),color=\"black\",size=0.5,linetype=\"dashed\") +
+	geom_line(aes((RANGE\$V1*100),log10(RANGE\$V6)),color=\"black\",size=0.5,linetype=\"dashed\") +
+	geom_line(aes((RANGE\$V1*100),log10(RANGE\$V7)),color=\"black\",size=0.5,linetype=\"dashed\") +
+	geom_line(aes((RANGE\$V1*100),log10(RANGE\$V8)),color=\"black\",size=0.5,linetype=\"dashed\") +
+#	geom_line(aes((SUMMARY\$V1*100),log10(SUMMARY\$V4)),color=\"black\",size=1,linetype=\"dashed\") +
+	geom_line(aes((SUMMARY\$V1*100),log10(SUMMARY\$V3)),color=\"black\",size=1) +
+	geom_point(aes((SUMMARY\$V1*100),log10(SUMMARY\$V3)),color=\"black\",size=3) +
+	geom_point(aes((SUMMARY\$V1*100),log10(SUMMARY\$V3),color=log10(SUMMARY\$V2)),size=2) +
+	scale_color_gradientn(colours=gradient_funct(99)) +
+	scale_x_continuous(limits=c(0,100)) +
+	scale_y_continuous(limits=c(2,6)) +
+	xlab(\"Complexity\") +
+	ylab(\"log10 Unique Reads\") +
+	labs(color=\"Log10 Total\\nReads\")
+ggsave(plot=PLT,filename=\"$opt{'O'}.read_projections/projected_complexity.png\",width=6,height=5)
+ggsave(plot=PLT,filename=\"$opt{'O'}.read_projections/projected_complexity.pdf\",width=6,height=5)
+"; close R;
+} else {
 open R, ">$opt{'O'}.read_projections/plot_projections.r";
 print R "
 library(ggplot2)
@@ -254,6 +292,7 @@ PLT<-ggplot() + theme_bw() +
 ggsave(plot=PLT,filename=\"$opt{'O'}.read_projections/projected_complexity.png\",width=6,height=5)
 ggsave(plot=PLT,filename=\"$opt{'O'}.read_projections/projected_complexity.pdf\",width=6,height=5)
 "; close R;
+}
 
 system("$Rscript $opt{'O'}.read_projections/plot_projections.r 2>/dev/null");
 

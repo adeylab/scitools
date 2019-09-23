@@ -14,14 +14,14 @@ $gradient_def = "BuRd";
 $imageType = "png";
 
 @ARGV = @_;
-getopts("O:d:t:s:A:a:C:c:r:N:n:G:R:V:v:X:", \%opt);
+getopts("O:d:t:s:A:a:C:c:r:N:n:G:L:R:VvPXpS:", \%opt);
 
 $die2 = "
 scitools matrix-bicluster [options] [input matrix]
    or    bicluster-matrix
    or    bicluster
 
-Produces a sorted bam file with read name and RG barcodes.
+Biclusters matrix and plots with heatmap2 and complexheatmap
 
 Options:
    -O   [STR]   Output (default is matrix file prefix)
@@ -40,6 +40,10 @@ Options:
    -R   [STR]   Rscript call (def = $Rscript)
    -V           Do not cluster columns
    -v           Do not cluster rows
+   -S 	      Based on silhuette plot do row clustering with optimal number of clusters
+   -P 			Do not show column names
+   -p 			Do not show row names
+   -L 			List of names that are part of the row annotation (eg tf name) it will plot them in the heatmap eg Rfx,Jun will mark all the tfs with this name
    -X           Do not delete intermediate files (def = delete)
    
 ";
@@ -53,7 +57,7 @@ $opt{'O'} =~ s/\.matrix$//;
 if (!defined $opt{'G'}) {$opt{'G'} = $gradient_def};
 $gradient_function = get_gradient($opt{'G'});
 
-if (defined $opt{'d'}) {($width,$height) = split(/,/, $opt{'d'}};
+if (defined $opt{'d'}) {($width,$height) = split(/,/, $opt{'d'})};
 if (defined $opt{'t'}) {if ($opt{'t'} =~ /(pdf|png)/) {$imageType = $opt{'t'}} else {die "\nERROR: Must specift pdf OR png for option -t.\n"}};
 if (defined $opt{'s'}) {$res = $opt{'s'}};
 
@@ -73,10 +77,10 @@ if (defined $opt{'a'}) {
 if (defined $opt{'N'}) {read_color_file($opt{'N'})};
 if (defined $opt{'n'}) {read_color_string($opt{'n'})};
 %ROW_ANNOT_color = %ANNOT_color; %ANNOT_color = ();
+$color_mapping_row=$color_mapping;
 
 if (defined $opt{'C'}) {read_color_file($opt{'C'})};
 if (defined $opt{'c'}) {read_color_string($opt{'c'})};
-
 # make col or row vector
 open MATRIX, "$ARGV[0]";
 $h = <MATRIX>; chomp $h; @H = split(/\t/, $h);
@@ -113,12 +117,160 @@ open R, ">$opt{'O'}.heatmap2.r";
 print R "
 library(gplots)
 library(grid)
+#second type of heatmap
+library(ComplexHeatmap)
+library(circlize)
+library(cluster)
+set.seed(123)
+
 
 $gradient_function
-IN <- read.table(\"$ARGV[0]\")\n";
+IN <- read.table(\"$ARGV[0]\");
+IN_ch<-read.delim(\"$ARGV[0]\")\n";
 
-if (defined $opt{'r'} && (defined $opt{'n'} || defined $opt{'N'})) {print R "ROW <- read.table(\"$opt{'O'}.row_colors.list\")\n"};
-if (defined $opt{'A'} && (defined $opt{'c'} || defined $opt{'C'})) {print R "COL <- read.table(\"$opt{'O'}.col_colors.list\")\n"};
+
+if ($imageType =~ /pdf/i) {
+	print R "$imageType(\"$opt{'O'}.silhouette.$imageType\",width=$width,height=$height)\n";
+} else {
+	print R "$imageType(\"$opt{'O'}.silhouette.$imageType\",width=$width,height=$height,units=\"in\",res=$res)\n";
+}
+if (defined $opt{'S'}){
+print R "
+k.max <- 15
+sil <- rep(0, k.max)
+for(i in 2:k.max){
+pr = pam(IN_ch,k=i)
+sil[i] <-mean(silhouette(pr)[, \"sil_width\"])
+}
+
+# Plot the  average silhouette width
+plot(1:k.max, sil, type = \"b\", pch = 19,
+     frame = FALSE, xlab = \"Number of clusters k\")
+abline(v = which.max(sil), lty = 2)
+dev.off()
+kmaval=which.max(sil)
+pa=pam(IN_ch,k=kmaval)
+write.table(pa\$clustering,rownames=T,colnames=T,sep=\"t\",quote=F)
+\n";
+
+
+}
+
+#complexheatmap implementation
+
+
+#complex heatmap with col annot
+if (defined $opt{'A'}) {
+print R "annot_ch<-read.table(\"$opt{'A'}\",header=F) 
+#order annot file in matrix order
+annot_col<-annot_ch[match(colnames(IN_ch), annot_ch\$V1),]
+\n"};
+
+
+if (defined $opt{'A'} && (defined $opt{'c'} || defined $opt{'C'})) {
+print R "color_ch<-list(Type=c($color_mapping))
+ha_col<-HeatmapAnnotation(Type = annot_col\$V2,col=color_ch)\n"
+} elsif(defined $opt{'A'} && (!defined $opt{'c'} || !defined $opt{'C'})){print R "ha_col<-HeatmapAnnotation(Type = annot_col\$V2)\n"};
+
+
+#now with rows
+
+if (defined $opt{'r'}) {
+print R "
+annot_ch_row<-read.table(\"$opt{'r'}\",header=F) 
+#order annot file in matrix order
+annot_row<-annot_ch_row[,match(rownames(IN_ch), annot_ch_row\$V1)]
+\n"};
+
+
+if (defined $opt{'r'} && (defined $opt{'n'} || defined $opt{'N'})) {
+print R "
+color_ch_row<-list(Type=c($color_mapping_row))
+ha_row<-HeatmapAnnotation(Type = annot_ch_row\$V2,col=color_ch_row,which = \"row\")\n"
+};
+
+
+if (defined $opt{'L'})
+{
+
+@input=split(',',$opt{'L'});
+@qinput=map{"'$_'"} @input;
+$string="c(".join(',',@qinput).")";
+print R "
+names <- $string
+aloc<-sapply(names,function(x) grep(x,rownames(IN_ch)))
+aloc<-unlist(aloc)
+alabel<-rownames(IN_ch)[aloc]
+labels<-alabel
+subset<-aloc
+ha_row_script<-rowAnnotation(link = row_anno_link(at = subset, labels = labels),width = unit(1, \"cm\") + max_text_width(labels))\n";
+
+}
+
+
+
+
+
+
+
+if ($imageType =~ /pdf/i) {
+	print R "$imageType(\"$opt{'O'}.complexheatmap.$imageType\",width=$width,height=$height)\n";
+} else {
+	print R "$imageType(\"$opt{'O'}.complexheatmap.$imageType\",width=$width,height=$height,units=\"in\",res=$res)\n";
+}
+
+
+print R "H <- Heatmap(IN_ch";
+if (defined $opt{'S'}) {
+	print R " ,split = paste0(\"pam\", pa\$clustering)";
+}
+
+if (defined $opt{'A'}) {
+	print R " ,bottom_annotation=ha_col";
+}
+
+if (defined $opt{'v'}) {
+	print R ",cluster_rows=FALSE";
+}
+if (defined $opt{'V'}) {
+	print R ",cluster_columns=FALSE";
+}
+
+if (defined $opt{'p'}) {
+	print R ",show_row_names=F";
+}
+if (defined $opt{'P'}) {
+	print R ",show_column_names=F";
+}
+
+print R ")";
+
+
+if (defined $opt{'r'} && (defined $opt{'n'} || defined $opt{'N'})) {
+	print R "
+	H=H+ha_row";
+}
+
+if (defined $opt{'L'})
+{
+	print R "
+	H=H+ha_row_script";	
+}
+
+
+
+print R "\nH\n dev.off()\n";
+
+
+
+
+
+
+#heatmap2 implementation
+
+if (defined $opt{'r'} && (defined $opt{'n'} || defined $opt{'N'})) {print R "ROW <- read.delim(\"$opt{'O'}.row_colors.list\",header= F)\n"};
+if (defined $opt{'A'} && (defined $opt{'c'} || defined $opt{'C'})) {print R "COL <- read.delim(\"$opt{'O'}.col_colors.list\",header= F)\n"};
+
 
 if ($imageType =~ /pdf/i) {
 	print R "$imageType(\"$opt{'O'}.heatmap2.$imageType\",width=$width,height=$height)\n";
@@ -128,7 +280,7 @@ if ($imageType =~ /pdf/i) {
 
 print R "HM2 <- heatmap.2(as.matrix(IN),
 	trace=\"none\",
-	col=colfunc(99),
+	#col=gradient_funct(99),
 	tracecol=\"black\"";
 
 if (defined $opt{'r'} && (defined $opt{'n'} || defined $opt{'N'}) && defined $opt{'A'} && (defined $opt{'c'} || defined $opt{'C'})) {
@@ -153,6 +305,10 @@ if (defined $opt{'V'}) {
 }
 
 print R ")\ndev.off()\n";
+
+
+
+
 
 close R;
 

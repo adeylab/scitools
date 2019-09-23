@@ -155,6 +155,7 @@ while ($l = <IN>) {
 				if ($lineType eq "READ") {
 					print OUT "$l\n";
 					$included_reads++;
+					$CELLID_included{$cellID}++;
 				} else {
 					$out_header .= "$l\n";
 				}
@@ -166,6 +167,7 @@ while ($l = <IN>) {
 				if ($lineType eq "READ") {
 					print OUT "$l\n";
 					$included_reads++;
+					$CELLID_included{$cellID}++;
 				} else {
 					$out_header .= "$l\n";
 				}
@@ -178,6 +180,13 @@ while ($l = <IN>) {
 $ts = localtime(time);
 print LOG "$ts\tTotal reads: $total_reads, Included reads: $included_reads\n";
 close LOG;
+
+open CELLIDS, ">$opt{'O'}.filt.cellIDs.list";
+foreach $cellID (keys %CELLID_included) {
+	print CELLIDS "$cellID\n";
+} close CELLIDS;
+
+
 
 }
 1;

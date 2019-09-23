@@ -12,7 +12,7 @@ sub atac_callpeak {
 # Defaults:
 $min_feature_size = 500;
 
-getopts("s:m:b:O:l:f:X", \%opt);
+getopts("s:m:b:O:l:f:Xe", \%opt);
 
 $die2 = "
 scitools atac-callpeak [options] [duplicate removed and filtered bam file]
@@ -26,6 +26,7 @@ Options:
    -s   [STR]   Samtools call (def = $samtools)
    -f   [STR]   Fai file for chr lengths (shorcut examples: hg19, hg38, and mm10 if in .cfg)
                 If toggled will ensure n peaks extend beyond
+   -e 			If toggled, will not filter chromosomes by standard filter pattern (i.e.(M|Y|L|K|G|Un|Random|Alt))
    -X           Retain intermediate files (def = remove)
 
 ";
@@ -48,14 +49,15 @@ if (defined $opt{'f'}) {
 	} close FAI;
 }
 
-system("$macs2 callpeak -t $ARGV[0] -n $opt{'O'} >> $opt{'O'}.macs2.log 2>> $opt{'O'}.macs2.log");
+system("$macs2 callpeak --keep-dup all -t $ARGV[0] -n $opt{'O'} >> $opt{'O'}.macs2.log 2>> $opt{'O'}.macs2.log");
 
 open IN, "$bedtools merge -i $opt{'O'}_peaks.narrowPeak 2>/dev/null |";
 open OUT, "| $bedtools sort -i - 2>/dev/null | $bedtools merge -i - > $opt{'O'}.$min_feature_size.tmp 2>/dev/null";
+
 while ($l = <IN>) {
 	chomp $l;
 	@P = split(/\t/, $l);
-	if ($P[0] !~ /(M|Y|L|K|G|Un|Random|Alt|_)/i) {
+	if (defined $opt{'e'} || $P[2] !~ /(M|Y|L|K|G|Un|Random|Alt)/i) {
 		if (($P[2]-$P[1])<$min_feature_size) {
 			$mid = ($P[2]+$P[1])/2;
 			$start = int($mid-($min_feature_size/2));
@@ -75,6 +77,8 @@ while ($l = <IN>) {
 	if (defined $opt{'f'}) {
 		if ($P[2] < $CHR_length{$P[0]}) {
 			print OUT "$P[0]\t$P[1]\t$P[2]\t$P[0]_$P[1]_$P[2]\n";
+		} else {
+			print OUT "$P[0]\t$P[1]\t$CHR_length{$P[0]}\t$P[0]_$P[1]_$CHR_length{$P[0]}\n";
 		}
 	} else {
 		print OUT "$P[0]\t$P[1]\t$P[2]\t$P[0]_$P[1]_$P[2]\n";

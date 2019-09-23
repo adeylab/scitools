@@ -16,7 +16,7 @@ $flanking_size = 100000;
 $gene_scale_factor = 1;
 $gene_text_size = 1.5;
 
-getopts("O:A:a:C:c:R:Xs:Dh:w:rp:B:G:S:f:t:V:v:", \%opt);
+getopts("O:A:a:C:c:R:Xs:Dh:w:rp:B:G:S:f:t:V:v", \%opt);
 
 $die2 = "
 scitools plot-reads [options] [rmdup sci bam file] [chrN:start-end] [region 2] ...
@@ -62,6 +62,7 @@ if (defined $opt{'h'}) {$height = $opt{'h'}};
 if (defined $opt{'w'}) {$width = $opt{'w'}};
 if (defined $opt{'S'}) {$flanking_size = $opt{'S'}};
 if (defined $opt{'f'}) {$gene_scale_factor = $opt{'f'}};
+if (defined $opt{'p'}) {$pt_size = $opt{'p'}};
 if (defined $opt{'t'}) {$gene_text_size = $opt{'t'}};
 if (defined $opt{'A'}) {
 	read_annot($opt{'A'});
@@ -138,7 +139,7 @@ if ($region =~ /.+:.+-.+/) { # region
 
 if ($region ne "skip") {
 ($chr,$start,$end) = split(/[:-]/, $region);
-open OUT, ">$opt{'O'}$region_name.data";
+open OUT, ">$opt{'O'}.$region_name.data";
 open IN, "$samtools view $bam $region |";
 $reads_in_region = 0; $cell_ct = 0; %CELLS_present = ();
 while ($l = <IN>) {
@@ -228,8 +229,8 @@ if (!defined $opt{'V'}) {
 	}
 }
 
-open IN, "$opt{'O'}$region_name.data";
-open OUT, ">$opt{'O'}$region_name.data.full";
+open IN, "$opt{'O'}.$region_name.data";
+open OUT, ">$opt{'O'}.$region_name.data.full";
 while ($l = <IN>) {
 	chomp $l;
 	($annot,$id,$posn) = split(/\t/, $l);
@@ -258,9 +259,9 @@ if (defined $opt{'B'}) {
 
 close OUT;
 if (!defined $opt{'X'}) {
-	system("rm -f $opt{'O'}$region_name.data && mv $opt{'O'}$region_name.data.full $opt{'O'}$region_name.data");
+	system("rm -f $opt{'O'}.$region_name.data && mv $opt{'O'}.$region_name.data.full $opt{'O'}.$region_name.data");
 } else {
-	system("mv $opt{'O'}$region_name.data $opt{'O'}$region_name.data.initial && mv $opt{'O'}$region_name.data.full $opt{'O'}$region_name.data");
+	system("mv $opt{'O'}.$region_name.data $opt{'O'}.$region_name.data.initial && mv $opt{'O'}.$region_name.data.full $opt{'O'}.$region_name.data");
 }
 
 if (defined $opt{'G'}) {
@@ -268,7 +269,7 @@ if (defined $opt{'G'}) {
 	$gene_num = -1*$scale_increment;
 	$genes_in_region = 0;
 	open IN, "$opt{'G'}";
-	open OUT, ">$opt{'O'}$region_name.gene_data";
+	open OUT, ">$opt{'O'}.$region_name.gene_data";
 	while ($l = <IN>) {
 		chomp $l;
 		if ($l !~ /^#/) {
@@ -320,23 +321,23 @@ if (defined $opt{'G'}) {
 }
 
 
-open R, ">$opt{'O'}$region_name.r";
+open R, ">$opt{'O'}.$region_name.r";
 print R "# plotting region $region
 library(ggplot2)
-IN <- subset(read.table(\"$opt{'O'}$region_name.data\"),V1==\"READ\")
+IN <- subset(read.table(\"$opt{'O'}.$region_name.data\"),V1==\"READ\")
 colnames(IN) <- c(\"type\",\"annot\",\"y\",\"x\")";
 
 if (defined $opt{'B'} && $peaks_in_region>0) {
 	print R "
-PEAKS <- subset(read.table(\"$opt{'O'}$region_name.data\"),V1==\"PEAK\")
+PEAKS <- subset(read.table(\"$opt{'O'}.$region_name.data\"),V1==\"PEAK\")
 colnames(PEAKS) <- c(\"type\",\"annot\",\"y\",\"x\")";
 }
 
 if (defined $opt{'G'} && $genes_in_region>0) {
 	print R "
-TRANS <- subset(read.table(\"$opt{'O'}$region_name.gene_data\"),V1==\"T\")
+TRANS <- subset(read.table(\"$opt{'O'}.$region_name.gene_data\"),V1==\"T\")
 colnames(TRANS) <- c(\"type\",\"xstart\",\"xend\",\"namepos\",\"name\",\"y\")
-EXONS <- subset(read.table(\"$opt{'O'}$region_name.gene_data\"),V1==\"E\")
+EXONS <- subset(read.table(\"$opt{'O'}.$region_name.gene_data\"),V1==\"E\")
 colnames(EXONS) <- c(\"type\",\"start\",\"end\",\"exon\",\"name\",\"y\")";
 }
 
@@ -396,14 +397,14 @@ if (defined $opt{'A'}) {
 		plot.background=element_blank())";
 }
 print R "
-ggsave(PLT,filename=\"$opt{'O'}$region_name.png\",width=$width,height=$height,dpi=900)
-ggsave(PLT,filename=\"$opt{'O'}$region_name.pdf\",width=$width,height=$height)
+ggsave(PLT,filename=\"$opt{'O'}.$region_name.png\",width=$width,height=$height,dpi=900)
+ggsave(PLT,filename=\"$opt{'O'}.$region_name.pdf\",width=$width,height=$height)
 ";
 
-system("$Rscript $opt{'O'}$region_name.r");
+system("$Rscript $opt{'O'}.$region_name.r");
 
 if (!defined $opt{'X'}) {
-	system("rm -f $opt{'O'}$region_name.r $opt{'O'}$region_name.*data*");
+	system("rm -f $opt{'O'}.$region_name.r $opt{'O'}.$region_name.*data*");
 }
 
 } else {

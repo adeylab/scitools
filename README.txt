@@ -1,8 +1,20 @@
-scitools Version: 0.1.3
+scitools Version: 0.2.0
 Adey Lab (www.adeylab.org, www.github.com/adeylab/scitools)
 
 WARNING: scitools is still in a development stage - a number of
 commands are in active development.
+
+v0.2.0 update: This version contains a number of tools that were
+internally used and moved here for public release. Note: many tools
+require addiitonal dependencies not listed in the dependencies
+function. This is being developed now and in progress. This only
+applies to new functions, most of which have dependencies that are
+self-explanatory (e.g. cistopic requires the R cistopic library),
+and others have the dependencies in the individual function's
+help text when called with no argumants.
+
+v0.2.1 will have an updated dependencies and new document for the
+recommended workflow of analysis.
 
 SETUP: To set up scitools, download the repository to the
 location you want the executable to be. Keep all index files
@@ -74,6 +86,9 @@ File Types used by scitools:
                Row 1 = CellIDs, has 1 less column than all other rows
                Rows = field 1 is name, then 1 field for each cellID
 			   
+   sparseMatrix   Sparse formatting for a matrix - triplet format with an
+               associated cols and rows file that go with a values file.
+			   
    dims     Dimensions file, tab delimited
                Col 1 = cellID
                Col 2-N = dimensions for each cell
@@ -81,3 +96,6 @@ File Types used by scitools:
                range of values (e.g. which dimensions to use from a dims file)
                This is a comma separated list and can include dashes for a
                range of values (e.g. 1,3-6,8-10,13)
+			   
+   colors   A file that has the annotaiton then a tab and an adssociated
+               color for convenience during plotting.

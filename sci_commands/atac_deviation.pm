@@ -8,15 +8,16 @@ use Exporter "import";
 sub atac_deviation {
 
 @ARGV = @_;
-$args = join("\t", @ARGV);
+$args = join(" ", @ARGV);
 
 # Defaults:
 $permCT = 100;
 $binCT = 100;
 $minTFCT = 10;
 $TSS_flanking = 20000;
+$corr_cutoff = 0.15;
 
-getopts("O:X:b:P:B:F:G:", \%opt);
+getopts("O:Xb:P:B:F:G:I:C:c:S:", \%opt);
 
 $die2 = "
 scitools atac-deviation [options] [counts matrix, may be unfiltered] [feature bed / gene list]
@@ -35,6 +36,8 @@ Options:
                  Gene list must be annotated, ie: geneName (tab) GeneSetName
                  OR fasta-like: >annotation, then subsequent lines as the
                     genes associated with it (can be comma-sep)
+   -C   [STR]   Cicero all-cons file. Will also use all linked sites.
+   -c   [FLT]   Cicero correlation cutoff (0-1, def = $corr_cutoff)
    -S   [INT]   Flanking size (out from TSS in bp, def = $TSS_flanking)
    -b   [STR]   Bedtools call (def = $bedtools)
    -X           Retain intermediate files (def = remove)
@@ -49,6 +52,12 @@ if (!defined $opt{'O'}) {
 if (defined $opt{'F'}) {$minTFCT = $opt{'F'}};
 if (defined $opt{'P'}) {$permCT = $opt{'P'}};
 if (defined $opt{'B'}) {$binCT = $opt{'B'}};
+if (defined $opt{'S'}) {$TSS_flanking = $opt{'S'}};
+if (!defined $opt{'G'} && $ARGV[1] !~ /\.bed$/) {
+	die "ERROR: if a bed file is not provided, a gene list is assumed and -G must be specified.\n";
+}
+if (defined $opt{'c'}) {$corr_cutoff = $opt{'c'}};
+if (defined $opt{'b'}) {$bedtools = $opt{'b'}};
 
 system("mkdir $opt{'O'}.dev");
 
@@ -67,15 +76,19 @@ while ($l = <IN>) {
 	chomp $l;
 	@P = split(/\t/, $l);
 	$siteID = shift(@P);
-	($chr,$start,$end) = split(/[:-_]/, $siteID);
-	print OUT "$chr\t$start\t$end\t$siteID\n";
-	$siteCT++;
-	$SITEID_totalCT{$siteID} = 0;
-	for ($i = 0; $i < @H; $i++) {
-		$SITEID_totalCT{$siteID}+=$P[$i];
-		$CELLID_totalCT{$H[$i]}+=$P[$i];
-		$CELLID_SITEID_ct{$H[$i]}{$siteID} = $P[$i];
-		$sum_all_sites_all_cells+=$P[$i];
+	if ($siteID !~ /[XYMG]/) {
+		($chr,$start,$end) = split(/[:-_]/, $siteID);
+		if (($end-$start)>0) {
+			print OUT "$chr\t$start\t$end\t$siteID\n";
+			$siteCT++;
+			$SITEID_totalCT{$siteID} = 0;
+			for ($i = 0; $i < @H; $i++) {
+				$SITEID_totalCT{$siteID}+=$P[$i];
+				$CELLID_totalCT{$H[$i]}+=$P[$i];
+				$CELLID_SITEID_ct{$H[$i]}{$siteID} = $P[$i];
+				$sum_all_sites_all_cells+=$P[$i];
+			}
+		}
 	}
 } close IN; close OUT;
 
@@ -84,7 +97,7 @@ print LOG "$ts\tMatrix read:
 \t\t\t\t$siteCT sites
 \t\t\t\t$sum_all_sites_all_cells total signal\n";
 
-if (defined $opt{'G'}) {
+if (defined $opt{'G'} && $ARGV[1] !~ /\.bed$/) {
 	$genes_found = 0; $geneCT = 0; $genes_missing = 0;
 	$ts = localtime(time);
 	print LOG "$ts\tGene file specified - reading in refgene file.\n";
@@ -95,7 +108,7 @@ if (defined $opt{'G'}) {
 	}
 	read_refgene($opt{'G'});
 	
-	print LOG "\t\t\t\tMatching genes to coordinates and builing annotated bed.\n";
+	print LOG "\t\t\t\tMatching genes to coordinates and building annotated bed.\n";
 	open IN, "$ARGV[1]";
 	open OUT, ">$opt{'O'}.dev/genes_TSS_$TSS_flanking.bed";
 	$gene_spec_mode = 0;
@@ -121,9 +134,12 @@ if (defined $opt{'G'}) {
 		}
 	} close IN; close OUT;
 	if ($genes_found<1) {die "ERROR: Gene mode was specified but no genes provided could be found in the refgene file: $opt{'G'}\n"};
+	$missing_gene_list =~ s/,$//;
+	print LOG "\t\t\t\ttotal genes = $total_genes, found genes = $genes_found, missing genes = $genes_missing ($missing_gene_list)\n";
 }
 
 sub process_gene {
+	$total_genes++;
 	$gene = $_[0];
 	$annot = $_[1];
 	if (defined $GENENAME_geneID{$gene}) {
@@ -131,7 +147,7 @@ sub process_gene {
 	} else {$geneID = $gene};
 	if (defined $GENEID_coords{$geneID}) {
 		$genes_found++;
-		($chr,$start,$end) = split(/[:-_]/, $GENEID_coords{$geneID});
+		($chr,$start,$end) = split(/[:-]/, $GENEID_coords{$geneID});
 		if ($GENEID_strand{$geneID} =~ /\+/) {
 			$TSS_pos = $start;
 		} else {
@@ -142,6 +158,7 @@ sub process_gene {
 		print OUT "$chr\t$flank_start\t$flank_end\t$annot\n";
 	} else {
 		$genes_missing++;
+		$missing_gene_list .= "$gene,";
 	}
 }
 
@@ -163,7 +180,13 @@ if (!defined $opt{'I'}) {
 		$TF_count{$TF}++;
 	} close IN;
 	
-	open IN, "$bedtools intersect -a $opt{'O'}.dev/peaks.bed -b $ARGV[1] -wa -wb |";
+	if ($ARGV[1] =~ /\.bed$/) {
+		open IN, "$bedtools intersect -a $opt{'O'}.dev/peaks.bed -b $ARGV[1] -wa -wb |";
+	} else {
+		open IN, "$bedtools intersect -a $opt{'O'}.dev/peaks.bed -b $opt{'O'}.dev/genes_TSS_$TSS_flanking.bed -wa -wb |";
+	}
+	
+	$total_siteCT = 0;
 	while ($l = <IN>) {
 		chomp $l;
 		@P = split(/\t/, $l);
@@ -178,22 +201,81 @@ if (!defined $opt{'I'}) {
 		} else {
 			$SITEID_TFct{$P[3]}++;
 		}
+		$total_siteCT++;
 	} close IN;
+	
+	print LOG "\t\t\t\tTotal peaks in select regions = $total_siteCT\n";
+	
+	if (defined $opt{'C'}) {
+		print LOG "\t\t\t\tAdding peaks linked by Cicero file ($opt{'C'}), correlation threshold = $corr_cutoff\n";
+		open IN, "$opt{'C'}";
+		while ($l = <IN>) {
+			chomp $l;
+			if ($l !~ /^Peak/) {
+				($id,$peak1,$peak2,$pcor,$corr) = split(/\t/, $l);
+				$peak1 =~ s/[-:]/_/g; $peak2 =~ s/[-:]/_/g;
+				if (defined $SITEID_totalCT{$peak1} && defined $SITEID_totalCT{$peak2}) {
+					if ($corr >= $corr_cutoff) {
+						if (defined $SITEID_TFct{$peak1}) {
+							foreach $TF (keys %{$SITEID_TF_ct{$peak1}}) {
+								if (!defined $SITEID_TFct{$peak2}) {
+									$SITEID_TF_ct{$peak2}{$TF} = 1;
+									$SITEID_TFct{$peak2} = 1;
+									$TF_siteCT{$TF}++;
+									$cicero_adds++;
+								} elsif (!defined $SITEID_TF_ct{$peak2}{$TF}) {
+									$SITEID_TF_ct{$peak2}{$TF} = 1;
+									$SITEID_TFct{$peak2}++;
+									$TF_siteCT{$TF}++;
+									$cicero_adds++;
+								}
+							}
+						}
+						if (defined $SITEID_TFct{$peak2}) {
+							foreach $TF (keys %{$SITEID_TF_ct{$peak2}}) {
+								if (!defined $SITEID_TFct{$peak1}) {
+									$SITEID_TF_ct{$peak1}{$TF} = 1;
+									$SITEID_TFct{$peak1} = 1;
+									$TF_siteCT{$TF}++;
+									$cicero_adds++;
+								} elsif (!defined $SITEID_TF_ct{$peak1}{$TF}) {
+									$SITEID_TF_ct{$peak1}{$TF} = 1;
+									$SITEID_TFct{$peak1}++;
+									$TF_siteCT{$TF}++;
+									$cicero_adds++;
+								}
+							}
+						}
+					}
+				}
+			}
+		} close IN;
+		print LOG "\t\t\t\tTotal peaks added by cicero links = $cicero_adds\n";
+	}
 
 	open OUT, ">$opt{'O'}.dev/site_intersects.txt";
 	foreach $siteID (keys %SITEID_TF_ct) {
-		$TF_list = "";
-		foreach $TF (sort keys %{$SITEID_TF_ct{$siteID}}) {
-			$TF_list .= "$TF,";
-		} $TF_list =~ s/,$//;
-		print OUT "$siteID\t$TF_list\n";
+		($chr,$start,$end) = split(/[:-_]/, $siteID);
+		if ($end-$start>0) {
+			$TF_list = "";
+			foreach $TF (sort keys %{$SITEID_TF_ct{$siteID}}) {
+				$TF_list .= "$TF,";
+			} $TF_list =~ s/,$//;
+			print OUT "$siteID\t$TF_list\n";
+		} else {
+			print LOG "\t\t\t\tWarning: $siteID excluded, end-start !> 0\n";
+		}
 	} close OUT;
 
 	open OUT, ">$opt{'O'}.dev/feature_peak_counts.txt";
 	print OUT "#TF\tIntersectSites\tFracTFinPeaks\tFracPeaksInTF\n";
 	foreach $TF (sort {$TF_siteCT{$b}<=>$TF_siteCT{$a}} keys %TF_siteCT) {
-		$frac1 = sprintf("%.2f", ($TF_siteCT{$TF}/$siteCT)*100);
-		$frac2 = sprintf("%.2f", ($TF_siteCT{$TF}/$TF_count{$TF})*100);
+		if ($siteCT > 0) {
+			$frac1 = sprintf("%.2f", ($TF_siteCT{$TF}/$siteCT)*100);
+		}
+		if ($TF_count{$TF} > 0) {
+			$frac2 = sprintf("%.2f", ($TF_siteCT{$TF}/$TF_count{$TF})*100);
+		}
 		print OUT "$TF\t$TF_siteCT{$TF}\t$frac1\t$frac2\n";
 	} close OUT;
 	%TF_siteCT = (); %SITEID_TF_ct = ();
@@ -205,7 +287,7 @@ $peaks_per_bin = $siteCT/$binCT;
 $ts = localtime(time);
 print LOG "$ts\tStratifying peaks into $binCT like-signal-bins, with $peaks_per_bin peaks per bin.\n";
 
-# OPTION 2: stratify by read DENSITY of peak, to account for the size of the peak and not purely counts
+# stratify by read DENSITY of peak, to account for the size of the peak and not purely counts
 foreach $siteID (keys %SITEID_totalCT) {
 	($chr,$start,$end) = split(/[:-_]/, $siteID);
 	$SITEID_density{$siteID} = $SITEID_totalCT{$siteID}/($end-$start);

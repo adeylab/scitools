@@ -15,6 +15,7 @@ $version = "0.1.2";
 );
 
 # LOAD MODULES
+use Cwd;
 use Getopt::Std; %opt = ();
 use sci_utils::general;
 use Exporter "import";
@@ -90,6 +91,7 @@ if (defined $ARGV[0]) {
 	} else {
 		$called_command = (shift(@ARGV));
 		$called_command =~ s/-/_/g;
+		
 		if (defined $COMMAND_ALIAS{$called_command}) {
 			$command = $COMMAND_ALIAS{$called_command};
 		} elsif (defined $COMMAND_ALIAS{lc($called_command)}) {
@@ -99,6 +101,26 @@ if (defined $ARGV[0]) {
 			$command = lc($command);
 		}
 		if (defined $COMMAND_NAMES{$command}) {
+		
+			# CHECK FOR LOGGING IF EXECUTION IS REAL
+			if ($log_check =~ /T/ && ($#ARGV+1)>0) {
+				$cwd = getcwd(); $user = $ENV{USER};
+				foreach $project_dir (keys %LOG_DIR) {
+					$project_dir =~ s/\/$//;
+					$projectID = $LOG_DIR{$project_dir};
+					if ($cwd =~ /$project_dir/) {
+						($head,$tail) = split(/$project_dir/, $cwd);
+						$head =~ s/\/$//; $project_dir =~ s/^\///;
+						$log_file = "$head/$project_dir/$projectID.scitools.log";
+						$log_ts = localtime(time);
+						$log_args = join(" ",@ARGV);
+						open PLOG, ">>$log_file";
+						print PLOG "$log_ts\tuser: $user\twd: $cwd\tcommand: scitools $command $log_args\n";
+						close PLOG;
+					}
+				}
+			}
+		
 			if (defined $IS_DEV{$command}) {
 				print STDERR "\nWARNING: Command $command is considered to be in development.\n";
 			}
@@ -143,6 +165,7 @@ sub load_aliases {
 	foreach $alias ("fastq_split", "split_fastq") {$COMMAND_ALIAS{$alias} = "fastq_split"};
 	foreach $alias ("fastq_merge", "merge_fastq") {$COMMAND_ALIAS{$alias} = "fastq_merge"};
 	foreach $alias ("fastq_align", "align_fastq", "align") {$COMMAND_ALIAS{$alias} = "fastq_align"};
+	foreach $alias ("fastq_barcode_collapse", "fastq_collapse", "barcode_collapse") {$COMMAND_ALIAS{$alias} = "fastq_barcode_collapse"};
 	foreach $alias ("fastq_from_geo", "geo2fastq", "fastq_geo", "geo_fastq",
 	                "fastq_from_sra", "sra2fastq", "fastq_sra", "sra_fastq") {$COMMAND_ALIAS{$alias} = "fastq_from_geo"};
 	
@@ -156,6 +179,8 @@ sub load_aliases {
 	foreach $alias ("bam_project", "project_bam", "project") {$COMMAND_ALIAS{$alias} = "bam_project"};
 	foreach $alias ("bam_aggregate", "aggregate_bam") {$COMMAND_ALIAS{$alias} = "bam_aggregate"};
 	foreach $alias ("index_performance", "index_perform") {$COMMAND_ALIAS{$alias} = "index_performance"};
+	foreach $alias ("bam2sra", "bam2geo") {$COMMAND_ALIAS{$alias} = "bam2sra"};
+	foreach $alias ("complexity2log10", "log10complexity", "log10_unique") {$COMMAND_ALIAS{$alias} = "complexity2log10"};
 	
 	# Signal Commands
 	foreach $alias ("signal_make", "make_signal") {$COMMAND_ALIAS{$alias} = "signal_make"};
@@ -164,11 +189,15 @@ sub load_aliases {
 	# Annotation Commands
 	foreach $alias ("annot_make", "make_annot") {$COMMAND_ALIAS{$alias} = "annot_make"};
 	foreach $alias ("annot_merge", "merge_annot") {$COMMAND_ALIAS{$alias} = "annot_merge"};
+	foreach $alias ("annot_rename", "rename_annot") {$COMMAND_ALIAS{$alias} = "annot_rename"};
 	foreach $alias ("rename_cells") {$COMMAND_ALIAS{$alias} = "rename_cells"};
+	foreach $alias ("annot_collapse", "collapse_annot") {$COMMAND_ALIAS{$alias} = "annot_collapse"};
+	foreach $alias ("annot_proportions", "proportions", "proportions_annot") {$COMMAND_ALIAS{$alias} = "annot_proportions"};
 	
 	# sci-ATAC-seq Commands
 	foreach $alias ("atac_callpeaks", "atac_callpeak", "callpeak", "callpeaks") {$COMMAND_ALIAS{$alias} = "atac_callpeak"};
-	foreach $alias ("atac_mergepeaks", "atac_mergepeak", "mergepeak", "mergepeaks") {$COMMAND_ALIAS{$alias} = "atac_mergepeak"};
+	foreach $alias ("atac_mergepeaks", "atac_mergepeak", "mergepeak", "mergepeaks",
+					"merge_bed", "bed_merge", "mergebed", "bedmerge") {$COMMAND_ALIAS{$alias} = "atac_mergepeak"};
 	foreach $alias ("atac_counts", "atac_count", "count", "counts") {$COMMAND_ALIAS{$alias} = "atac_count"};
 	foreach $alias ("atac_enrich", "enrich_atac") {$COMMAND_ALIAS{$alias} = "atac_enrich"};
 	
@@ -189,6 +218,8 @@ sub load_aliases {
 	foreach $alias ("matrix_pull", "pull_matrix") {$COMMAND_ALIAS{$alias} = "matrix_pull"};
 	foreach $alias ("counts2tsne", "atac_tsne", "counts_tsne") {$COMMAND_ALIAS{$alias} = "counts2tsne"};
 	foreach $alias ("matrix_da", "da_matrix", "atac_da", "da_atac", "diff_access") {$COMMAND_ALIAS{$alias} = "matrix_DA"};
+	foreach $alias ("matrix_sparse", "make_sparse", "sparse") {$COMMAND_ALIAS{$alias} = "matrix_sparse"};
+	foreach $alias ("matrix_unsparse", "make_unsparse", "unsparse") {$COMMAND_ALIAS{$alias} = "matrix_unsparse"};
 	
 	# Dimensions Commands
 	foreach $alias ("dims_kmeans", "kmeans") {$COMMAND_ALIAS{$alias} = "dims_kmeans"};
@@ -204,6 +235,7 @@ sub load_aliases {
 	foreach $alias ("plot_3ddims", "plot_dims_3d", "dims_plot3d", "dims_plot_3d") {$COMMAND_ALIAS{$alias} = "plot_3ddims"};
 	foreach $alias ("plot_pcurve", "pcurve_plot") {$COMMAND_ALIAS{$alias} = "plot_pcurve"};
 	foreach $alias ("plot_reads", "reads_plot") {$COMMAND_ALIAS{$alias} = "plot_reads"};
+	foreach $alias ("plot_values", "values_plot") {$COMMAND_ALIAS{$alias} = "plot_values"};
 	
 	# Data Comamnds
 	foreach $alias ("combine_data", "data_combine") {$COMMAND_ALIAS{$alias} = "data_combine"};
@@ -216,6 +248,22 @@ sub load_aliases {
 	foreach $alias ("met_probesummary", "met_probe_summary") {$COMMAND_ALIAS{$alias} = "met_probesummary"};
 	foreach $alias ("met_probeview", "met_probe_view") {$COMMAND_ALIAS{$alias} = "met_probeview"};
 	
+	# INTERNAL / DEVELOPMENT COMMANDS
+
+	foreach $alias ("atac_chromvar", "chromvar") {$COMMAND_ALIAS{$alias} = "atac_chromvar"};
+	foreach $alias ("matrix_approx_factors", "matrix_factors", "factors") {$COMMAND_ALIAS{$alias} = "matrix_factors"};
+	foreach $alias ("matrix_swne", "swne", "piglet") {$COMMAND_ALIAS{$alias} = "matrix_swne"};
+	foreach $alias ("umap", "owl", "matrix_umap", "dims_umap", "umap_dims") {$COMMAND_ALIAS{$alias} = "matrix_umap"};
+	foreach $alias ("plot_factors") {$COMMAND_ALIAS{$alias} = "plot_factors"};
+	foreach $alias ("atac_deviation", "deviation", "deviation_atac") {$COMMAND_ALIAS{$alias} = "atac_deviation"};
+	foreach $alias ("matrix_makecds", "matrix_makeCDS","makeCDS_matrix","makecds_matrix") {$COMMAND_ALIAS{$alias} = "matrix_makecds"};
+	foreach $alias ("cds_monocle","monocle_cds") {$COMMAND_ALIAS{$alias} = "cds_monocle"};
+	foreach $alias ("matrix_makeCDS","matrix_make_cds","matrix2cds","matrix_makecds","makecds","make-cds","cds-make") {$COMMAND_ALIAS{$alias} = "matrix_make_cds"};
+	foreach $alias ("matrix_cistopic","cistopic","cistopic_matrix","matrix-cistopic") {$COMMAND_ALIAS{$alias} = "matrix_cistopic"};
+	foreach $alias ("da_enrichment","da-enrichment","enrichment-da","enrichment_da") {$COMMAND_ALIAS{$alias} = "da_enrichment"};
+	foreach $alias ("atac_genehancer","atac-genehancer","genehancer","genehancer_atac","genehancer-atac") {$COMMAND_ALIAS{$alias} = "atac_genehancer"};
+	foreach $alias ("atac_refcount","refcount","refcount_atac") {$COMMAND_ALIAS{$alias} = "atac_refcount"};
+
 }
 
 sub load_descriptions {
@@ -234,16 +282,22 @@ sub load_descriptions {
 	$COMMAND_DESCRIPTOR{"fastq_merge"} = "Merge fastq files that have the same barcodes";
 	$COMMAND_DESCRIPTOR{"fastq_align"} = "Align fastq files and sort resulting bam file";
 	$COMMAND_DESCRIPTOR{"fastq_from_geo"} = "Convert GEO or SRA fqs w/ barcodes to scitools fq";
+	$COMMAND_DESCRIPTOR{"fastq_barcode_collapse"} = "Collapse barcodes in a fastq set -> sci format";
 	$COMMAND_DESCRIPTOR{"bam_bulk2sci"} = "Merge multiple bulk bam files to one SCI bam";
 	$COMMAND_DESCRIPTOR{"bam_addrg"} = "Add RG lines to bam";
 	$COMMAND_DESCRIPTOR{"bam_rmdup"} = "Barcode-based duplicate removal";
+	$COMMAND_DESCRIPTOR{"complexity2log10"} = "Complexity to log10 unique reads values file";
 	$COMMAND_DESCRIPTOR{"bam_filter"} = "Filter bam based on a variety of options";
 	$COMMAND_DESCRIPTOR{"bam_split"} = "Split bam by annotation file";
 	$COMMAND_DESCRIPTOR{"bam_merge"} = "Merges one or more bam files";
 	$COMMAND_DESCRIPTOR{"bam_project"} = "Use complexity to project additional sequence";
 	$COMMAND_DESCRIPTOR{"bam_aggregate"} = "Aggregate cells in bam by annotation file";
+	$COMMAND_DESCRIPTOR{"bam2sra"} = "Unfilterd bam files to SRA / GEO fastq files";
 	$COMMAND_DESCRIPTOR{"annot_make"} = "Make annotation file";
 	$COMMAND_DESCRIPTOR{"annot_merge"} = "Merge annotation files";
+	$COMMAND_DESCRIPTOR{"annot_rename"} = "Rename annotations using a mapping file";
+	$COMMAND_DESCRIPTOR{"annot_collapse"} = "Collapse annotations, or rename them";
+	$COMMAND_DESCRIPTOR{"annot_proportions"} = "Proportions of cells by annot";
 	$COMMAND_DESCRIPTOR{"rename_cells"} = "Rename cells";
 	$COMMAND_DESCRIPTOR{"atac_callpeak"} = "Call peaks on bam file using macs2";
 	$COMMAND_DESCRIPTOR{"atac_mergepeak"} = "Merge ATAC_seq peak files";
@@ -279,6 +333,7 @@ sub load_descriptions {
 	$COMMAND_DESCRIPTOR{"plot_3ddims"} = "Plot a dimensions file in 3d, uses a monocle CDS.rds file";
 	$COMMAND_DESCRIPTOR{"plot_pcurve"} = "Genrate multiple princurve plots";
 	$COMMAND_DESCRIPTOR{"plot_reads"} = "Plot reads as points in genomic window";
+	$COMMAND_DESCRIPTOR{"plot_values"} = "Plot values file";
 	$COMMAND_DESCRIPTOR{"index_performance"} = "Index performance on fastq or bam";
 	$COMMAND_DESCRIPTOR{"data_combine"} = "Combine matrixes, annotations, dims to a table";
 	$COMMAND_DESCRIPTOR{"data_split"} = "Breaks a combined data file into component files";
@@ -289,5 +344,24 @@ sub load_descriptions {
 	$COMMAND_DESCRIPTOR{"met_probesummary"} = "Summarize methylaiton over regions";
 	$COMMAND_DESCRIPTOR{"met_probeview"} = "Visualize methylaiton over regions";
 	
+	# INTERNAL / DEVELOPMENT COMMANDS
+	
+	$COMMAND_DESCRIPTOR{"check_vars"} = "Debugging tool to test vars passed to a command";
+	$COMMAND_DESCRIPTOR{"atac_chromvar"} = "Run chromVAR wrapper on sci-ATAC-seq data";
+	$COMMAND_DESCRIPTOR{"matrix_factors"} = "Calculates reconstruction error for NMF and SWNE";
+	$COMMAND_DESCRIPTOR{"matrix_nmf"} = "Non-negative Matrix Factorization of matrix";
+	$COMMAND_DESCRIPTOR{"matrix_swne"} = "SWNE on matrix";
+	$COMMAND_DESCRIPTOR{"matrix_umap"} = "UMAP on matrix";
+	$COMMAND_DESCRIPTOR{"plot_factors"} = "Generates factor vs reconstruction error plot";
+	$COMMAND_DESCRIPTOR{"atac_deviation"} = "Deviation and variability for a feature set";
+	$COMMAND_DESCRIPTOR{"cds_monocle"} = "Monocle3 Call for branch analysis on sci-ATAC-seq data";
+	$COMMAND_DESCRIPTOR{"cds_cicero"} = "Cicero Call for CCAN analysis on sci-ATAC-seq data";
+	$COMMAND_DESCRIPTOR{"matrix_make_cds"} = "Convert scitools files into CDS format for Monocle3";
+	$COMMAND_DESCRIPTOR{"dims_moran"} = "Spectral Statistics for ChromVar enrichment across clustered cells";
+	$COMMAND_DESCRIPTOR{"matrix_bicluster"} = "Bicluster and plot a heatmap";
+	$COMMAND_DESCRIPTOR{"matrix_cistopic"} = "cisTopic on matrix";
+	$COMMAND_DESCRIPTOR{"da_enrichment"} = "Analyze Diff Accessible Peaks with HOMER and LOLA";
+	$COMMAND_DESCRIPTOR{"atac_genehancer"} = "Overlap peaks bed file with Genehancer database";
+	$COMMAND_DESCRIPTOR{"atac_refcount"} = "Generate Counts Matrix with bbrd bam and reference bed file";
 
 }

@@ -9,28 +9,23 @@ sub index_performance {
 
 @ARGV = @_;
 
-# Defaults
-$gradient_def = "BuYlRd";
-
-getopts("O:I:R:s:t:A:xG:", \%opt);
+getopts("O:I:R:s:t:A:G:b:NT:", \%opt);
 
 # DEFAULTS
 @LETTERS = ("0", "A", "B", "C", "D", "E", "F", "G", "H");
 %LETTER_NUM = ("A"=>"1", "B"=>"2", "C"=>"3", "D"=>"4", "E"=>"5", "F"=>"6", "G"=>"7", "H"=>"8");
-%WELL_xy = ();
-foreach $letter (keys %LETTER_NUM) {
-	for ($number = 1; $number <= 12; $number++) {
-		$well = $letter.$number;
-		$WELL_xy{$well} = "$LETTER_NUM{$letter}\t$number";
-	}
-}
-$threshold = 1000000;
+$gradient_def = "BuYlRd";
+$bias = 0.65;
+$threshold = 1000;
+$minUniq = 1000;
 
 $die2 = "
-scitools index-perform [options] [fastq or bam]
+scitools index-perform [options] [fastq, bam, annot, complexity, or list]
 
 Will generate the read counts from each well of each tier of indexing.
 Should be on a pre-filetered since it will plot all barcode combos present.
+
+Requires barcode cell IDs.
 
 Options:
    -O   [STR]   Output prefix, will create a folder (def = input prefix)
@@ -39,9 +34,11 @@ Options:
          (Index names must be in form of: [Tier]_[set]_[i5/i7]_[A-H/1-12])
    -A   [STR]   Annotation file (only include cell IDs in the annot file)
    -t   [INT]   Threshold of reads for a plate to include (def = $threshold)
-   -x           Do not report plate-plate-well stats (just plate-well)
-   -G   [GRD]   Color gradient for plots (def = $gradient_def, biased 0.65)
+   -T   [INT]   Min unique reads (if complexity file, def = $minUniq)
+   -N           Do not log scale (eg for cell counts)
+   -G   [GRD]   Color gradient for plots (def = $gradient_def)
                 For all available gradients, run 'scitools gradient'
+   -b   [FLT]   Gradient bias (def = $bias)
    -R   [STR]   Rscript call (def = $Rscript)
    -s   [STR]   samtools call (if bam; def = $samtools)
 
@@ -57,10 +54,12 @@ if (defined $opt{'R'}) {$Rscript = $opt{'R'}};
 if (defined $opt{'s'}) {$samtools = $opt{'s'}};
 if (defined $opt{'I'}) {$VAR{'SCI_index_file'} = $opt{'I'}};
 if (defined $opt{'t'}) {$threshold = $opt{'t'}};
+if (defined $opt{'T'}) {$minUniq = $opt{'T'}};
 if (defined $opt{'A'}) {read_annot($opt{'A'})};
 if (!defined $opt{'G'}) {$opt{'G'} = $gradient_def};
+if (defined $opt{'b'}) {$bias = $opt{'b'}};
 $gradient_function = get_gradient($opt{'G'});
-$gradient_function =~ s/\)$//; $gradient_function .= ",bias=0.65)";
+$gradient_function =~ s/\)$//; $gradient_function .= ",bias=$bias)";
 
 read_indexes($VAR{'SCI_index_file'});
 
@@ -74,163 +73,154 @@ if ($ARGV[0] =~ /\.bam$/) {
 		$CELLID_count{$cellID}++;
 	} close IN;
 } else {
-	if ($ARGV[0] =~ /\.gz$/) {
-		open IN, "$zcat $ARGV[0] |";
-	} elsif ($ARGV[0] =~ /\.fq$/) {
+	if ($ARGV[0] =~ /fastq|fq/) {
+		if ($ARGV[0] =~ /\.gz$/) {
+			open IN, "$zcat $ARGV[0] |";
+		} elsif ($ARGV[0] =~ /\.fq$/) {
+			open IN, "$ARGV[0]";
+		}
+		while ($cellID = <IN>) {
+			chomp $cellID; $null = <IN>; $null = <IN>; $null = <IN>;
+			$cellID =~ s/:.+$//; $cellID =~ s/^\@//;
+			$CELLID_count{$cellID}++;
+		} close IN;
+	} elsif ($ARGV[0] =~ /complexity/) {
 		open IN, "$ARGV[0]";
-	} else {die "\n\nCannot determine file input type! Provide either a fastq (can be gzipped) or a bam file!\n\n$die2"};
-	while ($cellID = <IN>) {
-		chomp $cellID; $null = <IN>; $null = <IN>; $null = <IN>;
-		$cellID =~ s/:.+$//; $cellID =~ s/^\@//;
-		$CELLID_count{$cellID}++;
-	} close IN;
+		while ($l = <IN>) {
+			chomp $l;
+			@P = split(/\t/, $l);
+			$CELLID_count{$P[1]}++;
+		} close IN;
+	} elsif ($ARGV[0] =~ /annot|annotation|list|txt/) {
+		open IN, "$ARGV[0]";
+		while ($l = <IN>) {
+			chomp $l;
+			@P = split(/\s+/, $l);
+			$CELLID_count{$P[0]}++;
+		} close IN;
+	} else {
+		die "ERROR: Cannot determine file type!\n";
+	}
 }
 
 $NEX_set_count = 0; $PCR_set_count = 0;
 foreach $cellID (keys %CELLID_count) {
 	if (!defined $opt{'A'} || defined $CELLID_annot{$cellID}) {
-
-		$ix1 = substr($cellID,0,8);
-		$ix2 = substr($cellID,8,10);
-		$ix3 = substr($cellID,18,8);
-		$ix4 = substr($cellID,26,10);
 		
-		if (!defined $INDEX_POS_SEQ_id{'1'}{$ix1} ||
-			!defined $INDEX_POS_SEQ_id{'2'}{$ix2} ||
-			!defined $INDEX_POS_SEQ_id{'3'}{$ix3} ||
-			!defined $INDEX_POS_SEQ_id{'4'}{$ix4}) {
-			print STDERR "WARNING: Barcode combo: $cellID ($ix1)($ix2)($ix3)($ix4) has a barcode not present in the index file!\n";
+		# get indexes
+		$nex_i7 = substr($cellID,0,8);
+		$pcr_i7 = substr($cellID,8,10);
+		$nex_i5 = substr($cellID,18,8);
+		$pcr_i5 = substr($cellID,26,10);
+		
+		if (!defined $INDEX_POS_SEQ_id{'1'}{$nex_i7} ||
+			!defined $INDEX_POS_SEQ_id{'2'}{$pcr_i7} ||
+			!defined $INDEX_POS_SEQ_id{'3'}{$nex_i5} ||
+			!defined $INDEX_POS_SEQ_id{'4'}{$pcr_i5}) {
+			print STDERR "WARNING: Barcode combo: $cellID ($nex_i7)($pcr_i7)($nex_i5)($pcr_i5) has a barcode not present in the index file!\n";
 		}
 		
-		$NEX_set = $INDEX_POS_SEQ_id{'3'}{$ix3}.$INDEX_POS_SEQ_id{'1'}{$ix1};
-		$PCR_set = $INDEX_POS_SEQ_id{'4'}{$ix4}.$INDEX_POS_SEQ_id{'2'}{$ix2};
+		#split index name to map to coordinates
+		$nex_i7_set = $INDEX_POS_SEQ_id{'1'}{$nex_i7};
+		$pcr_i7_set = $INDEX_POS_SEQ_id{'2'}{$pcr_i7};
+		$nex_i5_set = $INDEX_POS_SEQ_id{'3'}{$nex_i5};
+		$pcr_i5_set = $INDEX_POS_SEQ_id{'4'}{$pcr_i5};
+				
+		$nex_i7_col = $INDEX_POS_SEQ_well{'1'}{$nex_i7};
+		$pcr_i7_col = $INDEX_POS_SEQ_well{'2'}{$pcr_i7};
+		$nex_i5_row = $INDEX_POS_SEQ_well{'3'}{$nex_i5};
+		$pcr_i5_row = $INDEX_POS_SEQ_well{'4'}{$pcr_i5};
 		
-		$NEX_well = $INDEX_POS_SEQ_well{'3'}{$ix3}.$INDEX_POS_SEQ_well{'1'}{$ix1};
-		$PCR_well = $INDEX_POS_SEQ_well{'4'}{$ix4}.$INDEX_POS_SEQ_well{'2'}{$ix2};
+		#make and store the wellID and counts
+		$nex_id = $LETTER_NUM{$nex_i5_row}.",".$nex_i7_col;
+		$pcr_id = $LETTER_NUM{$pcr_i5_row}.",".$pcr_i7_col;
+		$NEX_SET_count{$nex_i5_set.$nex_i7_set}++;
+		$PCR_SET_count{$pcr_i5_set.$pcr_i7_set}++;
+		$NEX_SET_WELLID_count{$nex_i5_set.$nex_i7_set}{$nex_id}++;
+		$PCR_SET_WELLID_count{$pcr_i5_set.$pcr_i7_set}{$pcr_id}++;
 		
-		if (!defined $NEX_SET_total{$NEX_set}) {$NEX_set_count++};
-		if (!defined $PCR_SET_total{$PCR_set}) {$PCR_set_count++};
-		
-		$NEX_SET_total{$NEX_set}+=$CELLID_count{$cellID};
-		$PCR_SET_total{$PCR_set}+=$CELLID_count{$cellID};
-		
-		$NEX_SET_WELL_total{$NEX_set}{$NEX_well}+=$CELLID_count{$cellID};
-		$PCR_SET_WELL_total{$PCR_set}{$PCR_well}+=$CELLID_count{$cellID};
-		
-		$NEX_SET_PCR_SET_total{$NEX_set}{$PCR_set}+=$CELLID_count{$cellID};
-		
-		$NEX_SET_PCR_SET_NEX_WELL_total{$NEX_set}{$PCR_set}{$NEX_well}+=$CELLID_count{$cellID};
-		$NEX_SET_PCR_SET_PCR_WELL_total{$NEX_set}{$PCR_set}{$PCR_well}+=$CELLID_count{$cellID};
+		#get stats on broader sets
+		#add in later ##########################
 		
 	}
 }
 
 system("mkdir $opt{'O'}.index_performance");
 
-open SUMMARY, ">$opt{'O'}.index_performance/summary.txt";
-$ts = localtime(time);
-print SUMMARY "$ts scitools index-performance on $ARGV[0]
-Transposase-based index totals:\n";
-foreach $NEX_set (keys %NEX_SET_total) {
-	print SUMMARY "  $NEX_set\t$NEX_SET_total{$NEX_set}\n";
-}
-print SUMMARY "PCR-based index totals:\n";
-foreach $PCR_set (keys %PCR_SET_total) {
-	print SUMMARY "  $PCR_set\t$PCR_SET_total{$PCR_set}\n";
-}
+@PLOT_FILES = ();
 
-$plates_to_plot = 0;
-open OUT, ">$opt{'O'}.index_performance/plate_performance.txt";
-foreach $NEX_set (keys %NEX_SET_WELL_total) {
-	if ($NEX_SET_total{$NEX_set}>=$threshold) {
-		foreach $NEX_well (sort keys %WELL_xy) {
-			$coord = $WELL_xy{$NEX_well};
-			if (defined $NEX_SET_WELL_total{$NEX_set}{$NEX_well}) {
-				print OUT "NEX\t$NEX_set\tALL\t$NEX_well\t$NEX_SET_WELL_total{$NEX_set}{$NEX_well}\t$coord\n";
-			} else {
-				print OUT "NEX\t$NEX_set\tALL\t$NEX_well\t0\t$coord\n";
-			}
-		}
-		$plates_to_plot++;
-	}
-}
-foreach $PCR_set (keys %PCR_SET_WELL_total) {
-	if ($PCR_SET_total{$PCR_set}>=$threshold) {
-		foreach $PCR_well (sort keys %WELL_xy) {
-			$coord = $WELL_xy{$PCR_well};
-			if (defined $PCR_SET_WELL_total{$PCR_set}{$PCR_well}) {
-				print OUT "PCR\tALL\t$PCR_set\t$PCR_well\t$PCR_SET_WELL_total{$PCR_set}{$PCR_well}\t$coord\n";
-			} else {
-				print OUT "PCR\tALL\t$PCR_set\t$PCR_well\t0\t$coord\n";
-			}
-		}
-		$plates_to_plot++;
-	}
-}
-if ($PCR_set_count > 1 && $NEX_set_count > 1 && !defined $opt{'x'}) {
-	foreach $NEX_set (keys %NEX_SET_WELL_total) {
-		foreach $PCR_set (keys %PCR_SET_WELL_total) {
-			if ($NEX_SET_PCR_SET_total{$NEX_set}{$PCR_set}>=$threshold) {
-				foreach $NEX_well (sort keys %WELL_xy) {
-					$coord = $WELL_xy{$NEX_well};
-					if (defined $NEX_SET_PCR_SET_NEX_WELL_total{$NEX_set}{$PCR_set}{$NEX_well}) {
-						print OUT "NEX\t$NEX_set\t$PCR_set\t$NEX_well\t$NEX_SET_PCR_SET_NEX_WELL_total{$NEX_set}{$PCR_set}{$NEX_well}\t$coord\n";
-					} else {
-						print OUT "NEX\t$NEX_set\t$PCR_set\t$NEX_well\t0\t$coord\n";
-					}
+foreach $nexSet (keys %NEX_SET_WELLID_count) {
+	if ($NEX_SET_count{$nexSet} >= $threshold) {
+		open OUT, ">$opt{'O'}.index_performance/nex_$nexSet.wellID.counts";
+		print OUT "#row\tcol\tcount\n";
+		for ($row = 1; $row <= 8; $row++) {
+			for ($col = 1; $col <= 12; $col++) {
+				$wellID = $row.",".$col;
+				if (defined $NEX_SET_WELLID_count{$nexSet}{$wellID}) {
+					print OUT "$row\t$col\t$NEX_SET_WELLID_count{$nexSet}{$wellID}\n";
+				} else {
+					print OUT "$row\t$col\t0\n";
 				}
-				$plates_to_plot++;
 			}
 		}
+		close OUT;
+		push @PLOT_FILES, "$opt{'O'}.index_performance/nex_$nexSet.wellID.counts";
+		push @PLOT_TITLE, "Transposase Index Combination: $nexSet";
+	} else {
+		print STDERR "NEX Set: $nexSet has $NEX_SET_count{$nexSet} reads which is < threshold of $threshold.\n";
 	}
-	foreach $NEX_set (keys %NEX_SET_WELL_total) {
-		foreach $PCR_set (keys %PCR_SET_WELL_total) {
-			if ($NEX_SET_PCR_SET_total{$NEX_set}{$PCR_set}>=$threshold) {
-				foreach $PCR_well (sort keys %WELL_xy) {
-					$coord = $WELL_xy{$PCR_well};
-					if (defined $NEX_SET_PCR_SET_PCR_WELL_total{$NEX_set}{$PCR_set}{$PCR_well}) {
-						print OUT "PCR\t$NEX_set\t$PCR_set\t$PCR_well\t$NEX_SET_PCR_SET_PCR_WELL_total{$NEX_set}{$PCR_set}{$PCR_well}\t$coord\n";
-					} else {
-						print OUT "PCR\t$NEX_set\t$PCR_set\t$PCR_well\t0\t$coord\n";
-					}
+}
+
+foreach $pcrSet (keys %PCR_SET_WELLID_count) {
+	if ($PCR_SET_count{$pcrSet} >= $threshold) {
+		open OUT, ">$opt{'O'}.index_performance/pcr_$pcrSet.wellID.counts";
+		for ($row = 1; $row <= 8; $row++) {
+			for ($col = 1; $col <= 12; $col++) {
+				$wellID = $row.",".$col;
+				if (defined $PCR_SET_WELLID_count{$pcrSet}{$wellID}) {
+					print OUT "$row\t$col\t$PCR_SET_WELLID_count{$pcrSet}{$wellID}\n";
+				} else {
+					print OUT "$row\t$col\t0\n";
 				}
-				$plates_to_plot++;
 			}
 		}
+		close OUT;
+		push @PLOT_FILES, "$opt{'O'}.index_performance/pcr_$pcrSet.wellID.counts";
+		push @PLOT_TITLE, "PCR Index Combination: $nexSet";
+	} else {
+		print STDERR "PCR Set: $pcrSet has $PCR_SET_count{$pcrSet} reads which is < threshold of $threshold.\n";
 	}
 }
-close OUT;
-
-if ($plates_to_plot<2) {
-	die "\nThe number of plates passing filters to plot is zero. Try reducing the threshold to plot. (currently $threshold)\n";
-}
-
-$plot_height = 0.5+(int(($plates_to_plot/3)+1)*2.5);
 
 open R, ">$opt{'O'}.index_performance/plot_plates.r";
-print R "
-library(ggplot2)
-$gradient_function
-IN<-read.table(\"$opt{'O'}.index_performance/plate_performance.txt\")
-colnames(IN)<-c(\"Plate_type\",\"NEX_set\",\"PCR_set\",\"Plate_well\",\"Well_count\",\"Row\",\"Column\")
-PLT<-ggplot(data=IN) + theme_bw() +
-	geom_tile(aes(Column,Row,fill=log10(Well_count+1))) +
+print R "library(ggplot2)
+$gradient_function\n";
+
+for ($i = 0; $i<@PLOT_FILES; $i++) {
+	$plotFile = $PLOT_FILES[$i];
+	$plotTitle = $PLOT_TITLE[$i];
+	print R "
+# Plot File = $plotFile
+IN<-read.table(\"$plotFile\")
+colnames(IN)<-c(\"row\",\"col\",\"value\")
+PLT<-ggplot(data=IN) + theme_bw() + ggtitle(\"$plotTitle\") +
+	xlab(\"Column\") + ylab(\"Row\") +";
+if (!defined $opt{'N'}) {
+	print R "	geom_tile(aes(col,row,fill=log10(value))) +
+	labs(fill=\"Log10\nReads\") +";
+} else {
+print R "	geom_tile(aes(col,row,value)) +
+	labs(fill=\"Count\") +";
+} print R "
 	scale_y_reverse(breaks=c(1,2,3,4,5,6,7,8)) +
-	xlab(\"Column\") + ylab(\"Row\") +
-	facet_wrap(c(\"Plate_type\",\"NEX_set\",\"PCR_set\"),ncol=3,labeller=label_wrap_gen(multi_line=FALSE)) +
-	theme(strip.background=element_rect(fill=\"transparent\")) +
-	scale_fill_gradientn(colours=gradient_funct(99)) +
 	scale_x_continuous(breaks=c(1,2,3,4,5,6,7,8,9,10,11,12)) +
-	labs(fill=\"Log10\nReads\") +
-	theme(strip.background=element_blank(),
-		panel.grid=element_blank(),
-		axis.line=element_blank(),
-		axis.ticks=element_blank(),
-		panel.background=element_blank(),
-		plot.background=element_blank())
-ggsave(plot=PLT,filename=\"$opt{'O'}.index_performance/plate_performance.png\",height=$plot_height,width=12)
-ggsave(plot=PLT,filename=\"$opt{'O'}.index_performance/plate_performance.pdf\",height=$plot_height,width=12)
-"; close R;
+	scale_fill_gradientn(colours=gradient_funct(99))
+ggsave(plot=PLT,filename=\"$plotFile.png\",height=4,width=6)
+ggsave(plot=PLT,filename=\"$plotFile.pdf\",height=4,width=6)
+";
+}
+
+close R;
 
 system("$Rscript $opt{'O'}.index_performance/plot_plates.r");
 

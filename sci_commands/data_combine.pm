@@ -43,7 +43,7 @@ Options:
 ";
 
 if (defined $opt{'O'}) {unshift @ARGV, $opt{'O'}};
-if (!defined $ARGV[1]) {die $die2};
+if (!defined $ARGV[0] || (!defined $ARGV[1] && !defined $opt{'F'})) {die $die2};
 if ($ARGV[0] =~ /[,=]/) {die "ERROR: First argument must be the output file, it looks like the first argument specified is an input file.\n$die2"};
 if (defined $opt{'D'}) {$maxDim = $opt{'D'}};
 if (defined $opt{'a'} && !defined $opt{'A'}) {die "\nMust provide an annotaiton file (-A) if specifying annotations to filter (-a)!\n$die2"};

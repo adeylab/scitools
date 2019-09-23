@@ -17,7 +17,7 @@ $aggN = 15;
 $minN = 5;
 $theme = "Clean";
 
-getopts("O:D:N:A:a:C:c:x:y:R:XK:T:n:v:", \%opt);
+getopts("O:D:N:A:a:C:c:x:y:R:XK:T:n:v:V", \%opt);
 
 $die2 = "
 scitools dims-aggregate [options] [input dims/lambda/values]
@@ -39,6 +39,7 @@ Options:
    -K   [INT]   Number of clusters (overrides -N to be the min/aggregate)
                 This will utilize standard k-means to aggregate cells
                 For lambda clustering it will evenly space them
+   -V           Force it to read as a values / pseudotime file
    -A   [STR]   Annotation file (will only merge within annot)
    -a   [STR]   Comma separated list of annotations to include
                   (requires -A to be specified)
@@ -57,8 +58,6 @@ Plotting Options (def is input dims file coordinates - only for dims files):
 
 ";
 
-#die "ERROR: This function is under development and cannot be used in its current form!\n";
-
 if (!defined $ARGV[0]) {die $die2};
 if (defined $opt{'a'} && !defined $opt{'A'}) {die "\nMust provide an annotaiton file (-A) if specifying annotations to plot (-a)!\n$die2"};
 if (defined $opt{'C'} && defined $opt{'c'}) {die "\nSpecify either a color string (-c) or a color coding file (-C), not both!\n$die2"};
@@ -68,7 +67,7 @@ if (defined $opt{'n'}) {$minN = $opt{'n'}};
 if (defined $opt{'T'}) {$theme = $opt{'T'}};
 if (defined $opt{'v'}) {$oversample = $opt{'v'}};
 
-if ($ARGV[0] =~ /\.(lambda|values)$/) {
+if ($ARGV[0] =~ /\.(lambda|values|val)$/ || defined $opt{'V'}) {
 	print STDERR "INFO: A lambda or values file was detected - will aggregate in one dimension\n";
 	if (!defined $opt{'D'}) {$opt{'D'} = 1};
 	read_values($ARGV[0]);
@@ -93,7 +92,7 @@ if ($ARGV[0] =~ /\.(lambda|values)$/) {
 }
 
 if (!defined $opt{'O'}) {$opt{'O'} = $ARGV[0]};
-$opt{'O'} =~ s/\.(dims|lambda|values)$//;
+$opt{'O'} =~ s/\.(dims|lambda|values|val)$//;
 
 if (defined $opt{'R'}) {$Rscript = $opt{'R'}};
 
@@ -117,13 +116,14 @@ $xpos = $xdim-1; $ypos = $ydim-1;
 
 read_ranges($opt{'D'});
 
-if ($ARGV[0] =~ /\.(lambda|values)$/) {
+if ($ARGV[0] =~ /\.(lambda|values|val)$/ || defined $opt{'V'}) {
 	# figure out even spaced vs. even cell N
 	# if -K, then will be evenly spaced on lambda - uniform for all annotations
 	# elsif -N, then will be even number of cells - varable for annotations
 	if (defined $opt{'K'}) { # find centroids that will be constant across all annotations
 		%CLUST_global_centroid = ();
 		$clust_span = $value_range/$opt{'K'};
+		print STDERR "INFO: Value range is $value_range, span for each $opt{'K'} cluster is $clust_span\n"; 
 		$center = $clust_span/2;
 		$clustID = 0;
 		$CLUST_global_centroid{$clustID} = $center;
@@ -139,7 +139,7 @@ open OUT, ">$opt{'O'}.aggregate.annot";
 
 # loop through annotations individually
 foreach $annot (keys %ANNOT_include) {
-if ($ARGV[0] =~ /\.(lambda|values)$/) {
+if ($ARGV[0] =~ /\.(lambda|values|val)$/ || defined $opt{'V'}) {
 	# lambda file
 	# setup new CLUST center hash for the annot - all can be annot-only, no need for global to be kept
 	%CLUST_center = (); $assignment_count = 0; %CLUST_assignments = (); %CELLID_initial_cluster = (); %CLUST_cellIDs = ();
@@ -175,6 +175,8 @@ if ($ARGV[0] =~ /\.(lambda|values)$/) {
 					$CELLID_orphan{$cellID} = 1;
 				}
 				delete $CLUST_cellIDs{$clustID};
+			} else {
+				print STDERR "INFO: Cluster $clustID has $CLUST_assignments{$clustID} cells assigned which is >= $minN, and will be retained.\n";
 			}
 		}
 		foreach $cellID (keys %CELLID_orphan) {
@@ -325,7 +327,7 @@ if ($ARGV[0] =~ /\.(lambda|values)$/) {
 		}
 	} close AO;
 	open R, ">$opt{'O'}.$annot.agg_dims.r";
-	if ($ARGV[0] =~ /\.(lambda|values)$/) {
+	if ($ARGV[0] =~ /\.(lambda|values|val)$/ || defined $opt{'V'}) {
 	print R "
 D<-read.table(\"$opt{'O'}.$annot.agg_dims\",row.names=1)";
 	} else {
@@ -444,7 +446,7 @@ write.table(ANN,file=\"$opt{'O'}.$annot.agg_dims.annot\",col.names=FALSE,row.nam
 close CNT; close OUT;
 
 # Plot the projections of cells to their centroids
-if ($ARGV[0] =~ /\.(lambda|values)$/) {
+if ($ARGV[0] =~ /\.(lambda|values|val)$/ || defined $opt{'V'}) {
 	# labmda data plots?
 	# NOT CURRENTLY SUPPORTED
 } else {
