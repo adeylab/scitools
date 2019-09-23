@@ -134,10 +134,10 @@ foreach $cellID (keys %CELLID_count) {
 		#make and store the wellID and counts
 		$nex_id = $LETTER_NUM{$nex_i5_row}.",".$nex_i7_col;
 		$pcr_id = $LETTER_NUM{$pcr_i5_row}.",".$pcr_i7_col;
-		$NEX_SET_count{$nex_i5_set.$nex_i7_set}++;
-		$PCR_SET_count{$pcr_i5_set.$pcr_i7_set}++;
-		$NEX_SET_WELLID_count{$nex_i5_set.$nex_i7_set}{$nex_id}++;
-		$PCR_SET_WELLID_count{$pcr_i5_set.$pcr_i7_set}{$pcr_id}++;
+		$NEX_SET_count{$nex_i5_set.$nex_i7_set}+=$CELLID_count{$cellID};
+		$PCR_SET_count{$pcr_i5_set.$pcr_i7_set}+=$CELLID_count{$cellID};
+		$NEX_SET_WELLID_count{$nex_i5_set.$nex_i7_set}{$nex_id}+=$CELLID_count{$cellID};
+		$PCR_SET_WELLID_count{$pcr_i5_set.$pcr_i7_set}{$pcr_id}+=$CELLID_count{$cellID};
 		
 		#get stats on broader sets
 		#add in later ##########################
