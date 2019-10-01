@@ -72,7 +72,7 @@ foreach $dependency (@DEPENDENCIES) {
 
 print OUT "\nChecking R packages:\n"; close OUT;
 
-@R_PACKAGES = ("ggplot2","svd","Rtsne","methods","dbscan","chromVAR","chromVARmotifs","irlba","princurve");
+@R_PACKAGES = ("ggplot2","svd","Rtsne","methods","dbscan","chromVAR","chromVARmotifs","irlba","princurve", "cisTopic", "plyr", "umap", "monocle", "cicero", "Matrix");
 open R, ">$ARGV[0].r";
 foreach $package (@R_PACKAGES) {
 	print R "if (!require($package)) {print(\"  R: WARNING: $package cannot be loaded! Some scitools functions will not be useable unless it is installed.\",quote=FALSE)} else {print(\"  $package found and loadable!\",quote=FALSE)}\n";
